@@ -148,4 +148,4 @@ jobs:
         run: |
           cd release
           sha256sum -c SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../source/docs/RELEASE.md --latest
+          gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../docs/RELEASE.md --latest

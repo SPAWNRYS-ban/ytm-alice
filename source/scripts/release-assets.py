@@ -31,10 +31,12 @@ def tar_gz(path, entries):
 shutil.copyfile(root/'remote-cli.py', out/'ytm-alice-cli.py')
 shutil.copyfile(root/'install-client.sh', out/'install-client.sh')
 entries = [('ytm-alice-station/'+package.name, package)]
-for name in ('install.py','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE'):
-    entries.append(('ytm-alice-station/'+name, root/name))
-for name in ('README.md','LICENSE'):
-    entries.append(('ytm-alice-station/'+name, repository/name))
+for name, path in [('install.py', root/'install.py'),
+                   ('README.md', repository/'README.md'),
+                   ('LICENSE', repository/'licenses/LICENSE'),
+                   ('THIRD_PARTY_NOTICES.md', repository/'docs/THIRD_PARTY_NOTICES.md'),
+                   ('media/UPSTREAM-LICENSE', repository/'licenses/media/UPSTREAM-LICENSE')]:
+    entries.append(('ytm-alice-station/'+name, path))
 tar_gz(out/'ytm-alice-station.tar.gz', entries)
 tracked = subprocess.check_output(['git','ls-files','-z'], cwd=repository).decode().split('\0')
 tar_gz(out/('ytm-alice-'+version+'-source.tar.gz'), [

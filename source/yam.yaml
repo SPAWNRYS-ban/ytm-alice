@@ -13,15 +13,15 @@ files:
   bin/bt-proxy: media/dist/bt-proxy
   share/local.ytm-alice/README.md: ../README.md
   share/local.ytm-alice/remote-cli.py: remote-cli.py
-  share/local.ytm-alice/THIRD_PARTY_NOTICES.md: THIRD_PARTY_NOTICES.md
-  share/local.ytm-alice/LICENSE: ../LICENSE
-  share/local.ytm-alice/licenses/: licenses/
-  share/local.ytm-alice/RELEASE.md: docs/RELEASE.md
-  share/local.ytm-alice/WEBUI.md: docs/WEBUI.md
+  share/local.ytm-alice/THIRD_PARTY_NOTICES.md: ../docs/THIRD_PARTY_NOTICES.md
+  share/local.ytm-alice/LICENSE: ../licenses/LICENSE
+  share/local.ytm-alice/licenses/: ../licenses/
+  share/local.ytm-alice/RELEASE.md: ../docs/RELEASE.md
+  share/local.ytm-alice/WEBUI.md: ../docs/WEBUI.md
   share/local.ytm-alice/media/bus.conf: media/bus.conf
-  share/local.ytm-alice/media/README.md: media/README.md
-  share/local.ytm-alice/media/LICENSE: media/LICENSE
-  share/local.ytm-alice/media/UPSTREAM-LICENSE: media/UPSTREAM-LICENSE
+  share/local.ytm-alice/media/README.md: ../docs/MEDIA.md
+  share/local.ytm-alice/media/LICENSE: ../licenses/media/LICENSE
+  share/local.ytm-alice/media/UPSTREAM-LICENSE: ../licenses/media/UPSTREAM-LICENSE
   share/local.ytm-alice/media/upstream/Cargo.toml: media/upstream/Cargo.toml
   share/local.ytm-alice/media/upstream/Cargo.lock: media/upstream/Cargo.lock
   share/local.ytm-alice/media/upstream/build.sh: media/upstream/build.sh

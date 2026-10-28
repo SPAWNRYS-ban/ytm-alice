@@ -51,5 +51,5 @@ body:
     id: logs
     attributes:
       label: Диагностика
-      description: "Релевантный фрагмент логов /tmp/ytm-alice.log и /tmp/ytm-alice-player.log; удалите личные данные. Инструкция — CONTRIBUTING.md."
+      description: "Релевантный фрагмент логов /tmp/ytm-alice.log и /tmp/ytm-alice-player.log; удалите личные данные. Инструкция — docs/CONTRIBUTING.md."
       render: text

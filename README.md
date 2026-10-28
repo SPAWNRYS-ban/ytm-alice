@@ -69,4 +69,4 @@ ytm-alice
 | `ytm-alice --help` | Все команды |
 
 Музыкальные команды доступны и в CLI-клиенте на компьютере.
-[Подробная справка CLI](source/docs/CLI.md) · [Ошибки и предложения](https://github.com/SPAWNRYS-ban/ytm-alice/issues/new/choose)
+[Подробная справка CLI](docs/CLI.md) · [Ошибки и предложения](https://github.com/SPAWNRYS-ban/ytm-alice/issues/new/choose) · [Лицензии](licenses/)

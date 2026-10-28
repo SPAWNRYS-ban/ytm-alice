@@ -51,7 +51,7 @@ DBUS_SYSTEM_BUS_ADDRESS=unix:path=/tmp/btbus/socket ваш-плеер
 Ревизия `c8c743b10c4f540c0a690eb7cb0cf5a92b7f336b`; бинарник ARMv7 musl
 собирается из приложенных исходников. Контрольная сумма находится в SHA256SUMS релиза.
 Авторство проекта: Марк Писаренко / Yandex station extended / hackalice;
-лицензия репозитория CC BY 4.0 приложена в UPSTREAM-LICENSE.
+лицензия репозитория CC BY 4.0 — [UPSTREAM-LICENSE](../licenses/media/UPSTREAM-LICENSE).
 Rust-код bt-proxy не изменён; изменены скрипт сборки, оболочка установки/автозапуска и pidfile шины.
 Они опубликованы под MIT. Исходники bt-proxy, lock-файл и скрипт сборки приложены.
 Конфигурация шины теперь размещается внутри share/local.ytm-alice/media/.

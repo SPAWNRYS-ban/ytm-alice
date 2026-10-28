@@ -28,8 +28,8 @@ Marker284/yandex-station-extended, revision
 c8c743b10c4f540c0a690eb7cb0cf5a92b7f336b, under CC BY 4.0.
 https://github.com/Marker284/yandex-station-extended/tree/c8c743b10c4f540c0a690eb7cb0cf5a92b7f336b/contrib/bt-proxy
 
-The upstream source, build script and lock file are included in media/upstream/;
-the attribution and license are in media/README.md and media/UPSTREAM-LICENSE.
+The upstream source, build script and lock file are included in source/media/upstream/;
+the attribution and license are in docs/MEDIA.md and licenses/media/UPSTREAM-LICENSE.
 The MIT media wrapper has been adapted to load its bus configuration from the
 ytm-alice package directory. No endorsement by the upstream authors is implied.
 The ytm-alice code and wrapper remain MIT; the combined package is declared as

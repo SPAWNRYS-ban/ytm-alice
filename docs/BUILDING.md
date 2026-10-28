@@ -39,16 +39,16 @@ python3 scripts/check-package.py --yam ../.build/yam/target/release/yam --profil
 python3 scripts/release-assets.py ../release/*.yampkg
 ```
 
-Артефакты — в `release/` в корне репозитория. `yam.yaml` берёт README и лицензию
-из корня; исходный архив сохраняет структуру репозитория с каталогом `source/`.
+Артефакты — в `release/` в корне репозитория. `yam.yaml` берёт README из корня, документацию из `docs/` и лицензии
+из `licenses/`; исходный архив сохраняет структуру репозитория с каталогом `source/`.
 Проверка пакета выполняет чистую установку, обновление с двух пакетов,
 удаление и проверку сохранности пользовательских данных.
 
 ## Релиз
 
 Обновите версии в `source/main.go`, `source/remote-cli.py`, `source/yam.yaml`,
-`source/package.py` и заметки `source/docs/RELEASE.md`. Отправьте тег `vX.Y.Z`
+`source/package.py` и заметки `docs/RELEASE.md`. Отправьте тег `vX.Y.Z`
 на коммит из `main`. CI проверит версии, выполнит тесты Linux/macOS,
 соберёт пакет и опубликует GitHub Release с SHA-256.
 
-[CLI](CLI.md) · [Веб-панель](WEBUI.md) · [Участие в проекте](../../.github/CONTRIBUTING.md)
+[CLI](CLI.md) · [Веб-панель](WEBUI.md) · [Участие в проекте](CONTRIBUTING.md)

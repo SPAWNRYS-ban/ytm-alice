@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parents[1]
 metadata = json.loads(subprocess.check_output(['cargo','metadata','--locked','--format-version','1',
                                                '--filter-platform','armv7-unknown-linux-musleabihf',
                                                '--manifest-path',str(root/'media/upstream/Cargo.toml')]))
-destination = root/'licenses/rust'
+destination = root.parent/'licenses/rust'
 if destination.exists():
     shutil.rmtree(destination)
 destination.mkdir(parents=True, exist_ok=True)
