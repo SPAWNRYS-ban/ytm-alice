@@ -39,3 +39,12 @@ The Rust media executable's locked dependency license texts are collected from
 Cargo registry sources into licenses/rust/ during the release build. Its index
 records crate names, versions and SPDX expressions. The release source archive
 contains the same notices. Cargo.lock records checksums of the upstream sources.
+
+## Standard libraries and native runtime
+
+The static Go service includes the Go standard library (BSD-3-Clause).
+The static Rust media executable includes the Rust standard library
+(Apache-2.0 OR MIT), compiler-builtins and musl libc. Their notices and license
+texts are retained in licenses/runtime/, alongside the Cargo dependency texts.
+Sources: https://github.com/rust-lang/rust/tree/1.99.0,
+https://github.com/rust-lang/compiler-builtins and https://musl.libc.org/.
