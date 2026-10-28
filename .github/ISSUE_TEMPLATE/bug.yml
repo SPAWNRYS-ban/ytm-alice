@@ -1,6 +1,7 @@
 name: Ошибка
 description: Воспроизводимая проблема с воспроизведением, панелью или установкой.
 title: "[Ошибка] "
+labels: [bug]
 body:
   - type: markdown
     attributes:

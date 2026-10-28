@@ -1,6 +1,7 @@
 name: Предложение
 description: Улучшение с понятной задачей и примером использования.
 title: "[Идея] "
+labels: [enhancement]
 body:
   - type: textarea
     id: problem

@@ -188,7 +188,8 @@ class Client:
             headers={'Content-Type':'application/json', 'Origin':self.base_url, 'X-Ytm-Client':'web'})
         try:
             try:
-                response = urllib.request.build_opener(NoRedirect()).open(request, timeout=55)
+                response = urllib.request.build_opener(
+                    urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=55)
             except urllib.error.HTTPError as error:
                 response = error
             with response:
@@ -468,7 +469,9 @@ def panel(screen, client):
                 value=f'{prefix} {index+1:>3}  {label(items[index])}  {duration_text(items[index].get("duration_ms"))}'
                 put(7+line,2,value,curses.A_REVERSE if index==selected else 0)
             notice=message
-            if foreground:notice=f'{"|/-\\"[int(now*5)%4]} {message}  {now-started:.0f} с'
+            if foreground:
+                spinner = '|/-\\'[int(now*5)%4]
+                notice=f'{spinner} {message}  {now-started:.0f} с'
             put(height-4,2,notice,red if error else yellow)
             put(height-3,2,'↑↓ выбор  Enter играть  Space пауза  n/b треки  s стоп',cyan)
             put(height-2,2,'/ поиск  p запрос  l лайки  L плейлисты  Esc очередь  q выход',cyan)

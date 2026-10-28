@@ -1,6 +1,7 @@
 name: Вопрос
 description: Помощь с установкой и использованием.
 title: "[Вопрос] "
+labels: [question]
 body:
   - type: input
     id: environment
