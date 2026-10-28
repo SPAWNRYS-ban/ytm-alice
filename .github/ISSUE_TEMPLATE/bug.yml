@@ -17,7 +17,7 @@ body:
     id: device
     attributes:
       label: Модель Станции и версия прошивки
-      placeholder: "Станция Лайт 1 (YNDX-00025), версия прошивки из приложения"
+      placeholder: "Название модели, код устройства и версия прошивки из приложения"
     validations:
       required: true
   - type: dropdown

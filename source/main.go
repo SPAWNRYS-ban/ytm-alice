@@ -907,7 +907,10 @@ func printResponse(out response, asJSON bool) {
 	}
 }
 func help() {
-	fmt.Println("ytm-alice " + version + ` · автономный YouTube Music для Станции Лайт
+	fmt.Println("ytm-alice " + version + ` · автономный YouTube Music для Яндекс Станций
+
+Тестирование проводилось только на Станции Лайт 1 (YNDX-00025).
+Работа на других моделях пока не проверена.
 
   play "запрос или ссылка"   включить трек, альбом или плейлист
   search "запрос"            поиск; select N — выбрать результат
