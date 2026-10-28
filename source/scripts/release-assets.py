@@ -10,6 +10,7 @@ import subprocess
 import tarfile
 
 root = Path(__file__).resolve().parents[1]
+repository = root.parent
 parser = argparse.ArgumentParser()
 parser.add_argument('package', type=Path)
 args = parser.parse_args()
@@ -30,12 +31,14 @@ def tar_gz(path, entries):
 shutil.copyfile(root/'remote-cli.py', out/'ytm-alice-cli.py')
 shutil.copyfile(root/'install-client.sh', out/'install-client.sh')
 entries = [('ytm-alice-station/'+package.name, package)]
-for name in ('install.py','README.md','LICENSE','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE'):
+for name in ('install.py','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE'):
     entries.append(('ytm-alice-station/'+name, root/name))
+for name in ('README.md','LICENSE'):
+    entries.append(('ytm-alice-station/'+name, repository/name))
 tar_gz(out/'ytm-alice-station.tar.gz', entries)
-tracked = subprocess.check_output(['git','ls-files','-z'], cwd=root).decode().split('\0')
+tracked = subprocess.check_output(['git','ls-files','-z'], cwd=repository).decode().split('\0')
 tar_gz(out/('ytm-alice-'+version+'-source.tar.gz'), [
-    ('ytm-alice-'+version+'/'+name, root/name) for name in tracked if name])
+    ('ytm-alice-'+version+'/'+name, repository/name) for name in tracked if name])
 assets = [package, out/'ytm-alice-cli.py', out/'install-client.sh', out/'ytm-alice-station.tar.gz',
           out/('ytm-alice-'+version+'-source.tar.gz')]
 (out/'SHA256SUMS').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name+'\n'

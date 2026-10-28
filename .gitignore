@@ -1,10 +1,11 @@
-/dist/
-/media/dist/
-/media/upstream/target/
+/source/dist/
+/source/media/dist/
+/source/media/upstream/target/
 /.build/
+/source/.build/
 /outputs/
 /release/
-/native-player
+/source/native-player
 __pycache__/
 *.py[cod]
 *.yampkg

@@ -16,6 +16,9 @@ concurrency:
 
 jobs:
   checks:
+    defaults:
+      run:
+        working-directory: source
     name: Tests (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -29,7 +32,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.sum
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
@@ -48,6 +52,9 @@ jobs:
         run: node --test test_web_cookies.mjs
 
   media:
+    defaults:
+      run:
+        working-directory: source
     name: Media tests and secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -71,6 +78,9 @@ jobs:
         run: cargo test --locked --manifest-path media/upstream/Cargo.toml
 
   build:
+    defaults:
+      run:
+        working-directory: source
     name: Station package
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -81,7 +91,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.sum
       - name: Validate release source
         run: |
           python3 scripts/check-version.py
@@ -100,14 +111,14 @@ jobs:
           python3 scripts/rust-notices.py
       - name: Build official YAM v2 packer
         run: |
-          git clone https://github.com/nyakokitsu/yam.git .build/yam
-          git -C .build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
-          cargo build --locked --release --manifest-path .build/yam/Cargo.toml --bin yam
+          git clone https://github.com/nyakokitsu/yam.git ../.build/yam
+          git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
+          cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
       - name: Pack and verify installation lifecycle
         run: |
-          python3 package.py --yam .build/yam/target/release/yam --profiles .build/yam/platforms
-          python3 scripts/check-package.py --yam .build/yam/target/release/yam --profiles .build/yam/platforms release/*.yampkg
-          python3 scripts/release-assets.py release/*.yampkg
+          python3 package.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
+          python3 scripts/check-package.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms ../release/*.yampkg
+          python3 scripts/release-assets.py ../release/*.yampkg
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate
@@ -137,4 +148,4 @@ jobs:
         run: |
           cd release
           sha256sum -c SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../RELEASE.md --latest
+          gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../source/docs/RELEASE.md --latest
