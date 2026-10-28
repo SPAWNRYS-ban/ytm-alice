@@ -60,3 +60,15 @@ python3 scripts/release-assets.py ../release/*.yampkg
 соберёт пакет и опубликует GitHub Release с SHA-256.
 
 [CLI](CLI.md) · [Веб-панель](WEBUI.md) · [Участие в проекте](CONTRIBUTING.md)
+
+## Бинарники в релизе
+
+`scripts/release-assets.py` копирует собранные `dist/ytm-alice`,
+`dist/ytm-alice-player` и `media/dist/bt-proxy` в `release/` как отдельные
+исполняемые файлы с версией и архитектурой в имени. Скрипт требует наличия
+всех трёх исполняемых файлов и включает их в `SHA256SUMS` вместе с остальными
+артефактами. CI сохраняет их в `release-candidate`, а при сборке тега публикует
+в GitHub Release рядом с `.yampkg`.
+
+Назначение бинарников и требования к ручной установке описаны в
+[RELEASE.md](RELEASE.md#отдельные-бинарники).

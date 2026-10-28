@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build public installation/source bundles from the tracked release source."""
+"""Build public binary, installation and source assets for a release."""
 import argparse
 import gzip
 import hashlib
@@ -28,6 +28,23 @@ def tar_gz(path, entries):
                 info.mode = 0o755 if source.stat().st_mode & 0o111 else 0o644
                 archive.addfile(info, io.BytesIO(content))
 
+# Architecture labels describe each executable, not a promise of model support.
+binaries = [
+    (root/'dist/ytm-alice', 'ytm-alice-'+version+'-linux-arm64'),
+    (root/'dist/ytm-alice-player', 'ytm-alice-player-'+version+'-linux-armhf'),
+    (root/'media/dist/bt-proxy', 'bt-proxy-'+version+'-linux-armv7-musl'),
+]
+# Fail before generating release bundles if a required build is missing.
+for source, _ in binaries:
+    if not source.is_file() or not source.stat().st_mode & 0o111:
+        raise SystemExit('Missing executable build: '+str(source))
+binary_assets = []
+for source, name in binaries:
+    destination = out/name
+    shutil.copyfile(source, destination)
+    destination.chmod(0o755)
+    binary_assets.append(destination)
+
 shutil.copyfile(root/'remote-cli.py', out/'ytm-alice-cli.py')
 shutil.copyfile(root/'install-client.sh', out/'install-client.sh')
 entries = [('ytm-alice-station/'+package.name, package)]
@@ -41,7 +58,7 @@ tar_gz(out/'ytm-alice-station.tar.gz', entries)
 tracked = subprocess.check_output(['git','ls-files','-z'], cwd=repository).decode().split('\0')
 tar_gz(out/('ytm-alice-'+version+'-source.tar.gz'), [
     ('ytm-alice-'+version+'/'+name, repository/name) for name in tracked if name])
-assets = [package, out/'ytm-alice-cli.py', out/'install-client.sh', out/'ytm-alice-station.tar.gz',
+assets = binary_assets + [package, out/'ytm-alice-cli.py', out/'install-client.sh', out/'ytm-alice-station.tar.gz',
           out/('ytm-alice-'+version+'-source.tar.gz')]
 (out/'SHA256SUMS').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name+'\n'
                                     for path in sorted(assets)))
