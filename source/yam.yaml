@@ -2,7 +2,7 @@ name: local/ytm-alice
 version: 0.7.0
 license: MIT AND CC-BY-4.0
 description: Автономный YouTube Music с медиаслоем и штатной кнопкой Алисы
-targets: [yandexmicro]
+targets: [yandexmicro, yandexmini_2]
 permissions: [network, audio, speech, exec, ipc]
 conflicts: [local/alice-media]
 replaces: [local/alice-media]
