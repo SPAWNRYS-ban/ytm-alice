@@ -23,6 +23,9 @@ spec.loader.exec_module(cli)
 def server(responder):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
+            # Drain POST data before closing, otherwise macOS may reset the
+            # socket and discard an error response with an unread request body.
+            self.payload = self.rfile.read(int(self.headers.get('Content-Length', 0)))
             responder(self)
         def log_message(self, *_):
             pass
@@ -41,8 +44,7 @@ class HTTPTests(unittest.TestCase):
     def test_commands_and_auth_cross_the_json_body_boundary(self):
         received = []
         def reply(handler):
-            received.append((handler.path, dict(handler.headers), json.loads(
-                handler.rfile.read(int(handler.headers['Content-Length'])))))
+            received.append((handler.path, dict(handler.headers), json.loads(handler.payload)))
             body = json.dumps({'state': {'status': 'paused'}}).encode()
             handler.send_response(200)
             handler.end_headers()
