@@ -1,0 +1,32 @@
+name: local/ytm-alice
+version: 0.7.0
+license: MIT AND CC-BY-4.0
+description: Автономный YouTube Music с медиаслоем и штатной кнопкой Алисы
+targets: [yandexmicro]
+permissions: [network, audio, speech, exec, ipc]
+conflicts: [local/alice-media]
+replaces: [local/alice-media]
+files:
+  bin/ytm-alice: dist/ytm-alice
+  bin/ytm-alice-player: dist/ytm-alice-player
+  bin/alice-media: media/alice-media
+  bin/bt-proxy: media/dist/bt-proxy
+  share/local.ytm-alice/README.md: README.md
+  share/local.ytm-alice/remote-cli.py: remote-cli.py
+  share/local.ytm-alice/THIRD_PARTY_NOTICES.md: THIRD_PARTY_NOTICES.md
+  share/local.ytm-alice/LICENSE: LICENSE
+  share/local.ytm-alice/licenses/: licenses/
+  share/local.ytm-alice/RELEASE.md: RELEASE.md
+  share/local.ytm-alice/WEBUI.md: WEBUI.md
+  share/local.ytm-alice/media/bus.conf: media/bus.conf
+  share/local.ytm-alice/media/README.md: media/README.md
+  share/local.ytm-alice/media/LICENSE: media/LICENSE
+  share/local.ytm-alice/media/UPSTREAM-LICENSE: media/UPSTREAM-LICENSE
+  share/local.ytm-alice/media/upstream/Cargo.toml: media/upstream/Cargo.toml
+  share/local.ytm-alice/media/upstream/Cargo.lock: media/upstream/Cargo.lock
+  share/local.ytm-alice/media/upstream/build.sh: media/upstream/build.sh
+  share/local.ytm-alice/media/upstream/src/: media/upstream/src/
+services:
+  player:
+    exec: [bin/ytm-alice, serve]
+    restart: on-failure

@@ -1,0 +1,75 @@
+# Rust dependency licenses
+
+Generated from the locked Cargo registry sources.
+
+- async-broadcast-0.7.2 — MIT OR Apache-2.0
+- async-channel-2.5.0 — Apache-2.0 OR MIT
+- async-executor-1.14.0 — Apache-2.0 OR MIT
+- async-io-2.6.0 — Apache-2.0 OR MIT
+- async-lock-3.4.2 — Apache-2.0 OR MIT
+- async-process-2.5.0 — Apache-2.0 OR MIT
+- async-recursion-1.2.0 — MIT OR Apache-2.0
+- async-signal-0.2.14 — Apache-2.0 OR MIT
+- async-task-4.7.1 — Apache-2.0 OR MIT
+- async-trait-0.1.92 — MIT OR Apache-2.0
+- atomic-waker-1.1.2 — Apache-2.0 OR MIT
+- autocfg-1.5.1 — Apache-2.0 OR MIT
+- bitflags-2.13.2 — MIT OR Apache-2.0
+- blocking-1.7.0 — Apache-2.0 OR MIT
+- cfg-if-1.0.5 — MIT OR Apache-2.0
+- concurrent-queue-2.5.0 — Apache-2.0 OR MIT
+- crossbeam-utils-0.8.23 — MIT OR Apache-2.0
+- endi-1.1.1 — MIT
+- enumflags2-0.7.12 — MIT OR Apache-2.0
+- enumflags2_derive-0.7.12 — MIT OR Apache-2.0
+- equivalent-1.0.3 — Apache-2.0 OR MIT
+- errno-0.3.14 — MIT OR Apache-2.0
+- event-listener-5.4.2 — Apache-2.0 OR MIT
+- event-listener-strategy-0.5.4 — Apache-2.0 OR MIT
+- fastrand-2.5.0 — Apache-2.0 OR MIT
+- futures-core-0.3.34 — MIT OR Apache-2.0
+- futures-io-0.3.34 — MIT OR Apache-2.0
+- futures-lite-2.6.1 — Apache-2.0 OR MIT
+- futures-task-0.3.34 — MIT OR Apache-2.0
+- futures-util-0.3.34 — MIT OR Apache-2.0
+- hashbrown-0.17.1 — MIT OR Apache-2.0
+- hex-0.4.3 — MIT OR Apache-2.0
+- indexmap-2.14.2 — Apache-2.0 OR MIT
+- libc-0.2.191 — MIT OR Apache-2.0
+- linux-raw-sys-0.12.1 — Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+- memchr-2.8.3 — Unlicense OR MIT
+- once_cell-1.21.4 — MIT OR Apache-2.0
+- ordered-stream-0.2.0 — MIT OR Apache-2.0
+- parking-2.2.1 — Apache-2.0 OR MIT
+- pin-project-lite-0.2.17 — Apache-2.0 OR MIT
+- piper-0.2.5 — MIT OR Apache-2.0
+- polling-3.11.0 — Apache-2.0 OR MIT
+- proc-macro-crate-3.5.0 — MIT OR Apache-2.0
+- proc-macro2-1.0.107 — MIT OR Apache-2.0
+- quote-1.0.47 — MIT OR Apache-2.0
+- rustix-1.1.5 — Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+- serde-1.0.229 — MIT OR Apache-2.0
+- serde_core-1.0.229 — MIT OR Apache-2.0
+- serde_derive-1.0.229 — MIT OR Apache-2.0
+- serde_repr-0.1.21 — MIT OR Apache-2.0
+- signal-hook-0.3.18 — Apache-2.0/MIT
+- signal-hook-registry-1.4.8 — MIT OR Apache-2.0
+- slab-0.4.12 — MIT
+- syn-2.0.119 — MIT OR Apache-2.0
+- syn-3.0.9 — MIT OR Apache-2.0
+- toml_datetime-1.1.2+spec-1.1.0 — MIT OR Apache-2.0
+- toml_edit-0.25.17+spec-1.1.0 — MIT OR Apache-2.0
+- toml_parser-1.1.5+spec-1.1.0 — MIT OR Apache-2.0
+- tracing-0.1.44 — MIT
+- tracing-attributes-0.1.31 — MIT
+- tracing-core-0.1.36 — MIT
+- unicode-ident-1.0.27 — (MIT OR Apache-2.0) AND Unicode-3.0
+- uuid-1.29.0 — Apache-2.0 OR MIT
+- winnow-1.0.4 — MIT
+- zbus-5.19.0 — MIT
+- zbus_macros-5.19.0 — MIT
+- zbus_names-4.3.5 — MIT
+- zcheapstr-1.1.0 — MIT
+- zvariant-5.15.1 — MIT
+- zvariant_derive-5.15.1 — MIT
+- zvariant_utils-4.2.0 — MIT

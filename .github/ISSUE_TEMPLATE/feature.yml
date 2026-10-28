@@ -1,0 +1,23 @@
+name: Предложение
+description: Улучшение с понятной задачей и примером использования.
+title: "[Идея] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу нужно решить
+      description: "Кому и в какой ситуации поможет изменение?"
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Желаемое поведение
+      description: "Пример команды, сценария или интерфейса."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы и ограничения
+      description: "Текущий обходной путь, модель устройства или связанные issues, если есть."

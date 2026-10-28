@@ -1,0 +1,17 @@
+name: Вопрос
+description: Помощь с установкой и использованием.
+title: "[Вопрос] "
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Модель Станции и версии ytm-alice / YAM
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Вопрос
+      description: "Что хотите сделать, на каком шаге остановились и что уже пробовали? Не публикуйте секреты."
+    validations:
+      required: true

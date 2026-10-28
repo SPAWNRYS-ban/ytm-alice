@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111214"><title>ytm-alice — музыка на колонке</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+ <a class="brand" href="/" aria-label="ytm-alice"><span class="brand-mark"><img src="/logo.svg" width="34" height="34" alt="" aria-hidden="true"></span><span>ytm<span class="brand-light">-alice</span></span></a>
+ <nav aria-label="Разделы">
+  <button class="nav-item active" data-view="queue" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#queue"></use></svg> Очередь</button>
+  <button class="nav-item" data-view="search"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#search"></use></svg> Поиск</button>
+  <button class="nav-item" data-view="liked"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#heart"></use></svg> Мои лайки</button>
+  <button class="nav-item" data-view="playlists"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#playlist"></use></svg> Плейлисты</button>
+  <button class="nav-item" data-view="commands"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#microphone"></use></svg> Команды</button>
+  <button class="nav-item" data-view="settings"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#settings"></use></svg> Настройки</button>
+ </nav>
+ <div class="sidebar-bottom"><span class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">Подключение…</span></span><small id="sidebar-version">ytm-alice</small></div>
+</aside>
+<main>
+ <header class="page-header"><div><h1 id="view-title">Очередь</h1></div><button id="account-shortcut" class="account-shortcut" aria-label="Аккаунт YouTube Music"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#account"></use></svg><span id="account-short-label">YouTube Music</span></button></header>
+ <section class="now-playing" aria-label="Сейчас играет">
+  <div class="cover-wrap"><img id="current-cover" src="/placeholder.svg" alt="Обложка текущего трека" width="280" height="280" referrerpolicy="no-referrer"></div>
+  <div class="now-info"><div class="playing-caption"><span class="mini-wave"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#wave"></use></svg></span><span id="player-status">Готова слушать</span></div><h2 id="current-title">Что включим?</h2><p id="current-artist">Найди трек или попроси Алису</p>
+   <div class="transport"><button id="previous" class="icon-button" aria-label="Предыдущий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#previous"></use></svg></button><button id="toggle" class="play-button" aria-label="Продолжить" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg></button><button id="next" class="icon-button" aria-label="Следующий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#next"></use></svg></button><button id="stop" class="text-button" disabled>Стоп</button></div>
+   <div class="timeline"><progress id="progress" max="1" value="0" aria-label="Позиция воспроизведения"></progress><div class="time-labels"><span id="elapsed">0:00</span><span id="duration">0:00</span></div></div>
+   <p class="quiet-note">Играет на колонке · страницу можно закрыть</p>
+  </div>
+ </section>
+ <div id="notice" class="notice" role="status" hidden></div>
+ <section id="view-queue" class="view panel"><div class="section-heading"><div><h2>Очередь</h2><p id="queue-caption">Выбери музыку для начала</p></div><button class="secondary-button" data-view="search">Найти музыку <svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow"></use></svg></button></div><div id="queue-list" class="track-list"></div></section>
+ <section id="view-search" class="view panel" hidden><div class="section-heading"><div><h2>Поиск</h2><p>Исполнитель, название или ссылка YouTube Music</p></div></div><form id="search-form" class="search-form"><label class="sr-only" for="search-input">Поиск музыки</label><input id="search-input" type="search" placeholder="Например, Sewerslvt Newlove" maxlength="500" autocomplete="off" required><button class="primary-button" id="search-submit" type="submit">Найти</button></form><div id="search-results" class="track-list"><p class="empty-state">Любимый трек — в одном поиске.</p></div></section>
+ <section id="view-liked" class="view panel" hidden><div class="section-heading"><div><h2>Твои любимые</h2><p>Понравившиеся треки YouTube Music · до 50 треков</p></div><button id="refresh-liked" class="secondary-button">Обновить лайки</button></div><div id="liked-list" class="track-list"></div></section>
+ <section id="view-playlists" class="view panel" hidden><div class="section-heading"><div><h2>Личная коллекция</h2><p>Плейлисты твоей библиотеки · до 50 плейлистов</p></div><button id="refresh-playlists" class="secondary-button">Обновить плейлисты</button></div><div id="playlist-list" class="playlist-grid"></div></section>
+ <section id="view-commands" class="view" hidden>
+  <div class="commands-intro"><h2>Скажи «Алиса» и команду</h2><p>Для запуска YouTube Music называй трек или добавляй «на ютубе».</p></div>
+  <div class="commands-grid">
+   <article class="panel command-card"><h3>Включить музыку</h3><dl class="command-list">
+    <div><dt>Трек или исполнитель</dt><dd>«Алиса, поставь Sewerslvt Newlove»</dd></div>
+    <div><dt>Поиск в YouTube Music</dt><dd>«Алиса, включи на ютубе джаз»</dd></div>
+    <div><dt>Альбом</dt><dd>«Алиса, поставь альбом Random Access Memories»</dd></div>
+    <div><dt>Найти плейлист</dt><dd>«Алиса, поставь плейлист lo-fi»</dd></div>
+    <div><dt>Понравившиеся треки</dt><dd>«Алиса, включи мои лайки»</dd></div>
+   </dl><p class="command-note">Для лайков подключи YouTube Music в настройках. Свои плейлисты можно выбрать в разделе «Плейлисты».</p></article>
+   <article class="panel command-card"><h3>Управлять воспроизведением</h3><dl class="command-list">
+    <div><dt>Пауза</dt><dd>«Алиса, пауза»</dd></div>
+    <div><dt>Продолжить</dt><dd>«Алиса, продолжи музыку»</dd></div>
+    <div><dt>Следующий трек</dt><dd>«Алиса, следующий трек»</dd></div>
+    <div><dt>Предыдущий трек</dt><dd>«Алиса, предыдущий трек»</dd></div>
+    <div><dt>Остановить</dt><dd>«Алиса, стоп»</dd></div>
+    <div><dt>Узнать название</dt><dd>«Алиса, что сейчас играет?»</dd></div>
+   </dl></article>
+  </div>
+ </section>
+ <section id="view-settings" class="view settings-grid" hidden>
+  <article class="panel"><div class="section-heading"><div><p class="eyebrow">АККАУНТ</p><h2>YouTube Music</h2><p id="auth-state">Проверяем состояние аккаунта…</p></div><span id="auth-badge" class="badge">—</span></div><div class="button-row"><button id="check-auth" class="secondary-button">Проверить вход</button><button id="choose-account" class="secondary-button">Сменить профиль</button><button id="logout-auth" class="text-button danger">Отключить аккаунт</button></div>
+   <details id="login-guide" open><summary>Как подключить аккаунт через cookies</summary><ol class="instructions"><li>Для более устойчивого входа открой отдельное приватное окно браузера, затем <a href="https://music.youtube.com" target="_blank" rel="noopener noreferrer">YouTube Music</a> и войди в нужный аккаунт. Разреши расширению работу в приватном окне.</li><li>Установи расширение: <a href="https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/" target="_blank" rel="noopener noreferrer">cookies.txt для Firefox</a> или <a href="https://github.com/kairi003/Get-cookies.txt-LOCALLY" target="_blank" rel="noopener noreferrer">Get cookies.txt LOCALLY для Chromium</a>.</li><li>В той же вкладке приватного окна открой <a href="https://www.youtube.com/robots.txt" target="_blank" rel="noopener noreferrer">youtube.com/robots.txt</a>. Экспортируй cookies в формате <strong>Netscape cookies.txt</strong>. Выбери Export, а не Export All Cookies.</li><li>Закрой приватное окно без выхода из аккаунта. Выбери файл ниже, нажми «Показать аккаунты» и подключи нужный профиль.</li></ol></details>
+   <form id="auth-form"><label class="field-label" for="cookie-file">Файл cookies.txt</label><input id="cookie-file" type="file" accept=".txt,text/plain"><button id="import-auth" type="submit" class="primary-button">Показать аккаунты</button><p class="field-help">После загрузки выбери аккаунт по имени. Cookies дают доступ к сессии — экспортированный файл можно удалить после подключения.</p></form>
+   <div id="account-choice" class="account-choice" hidden><label class="field-label" for="account-select">Профиль YouTube</label><select id="account-select"></select><p class="field-help">У каждого профиля свои лайки и плейлисты. Выбери тот, которым пользуешься в YouTube Music.</p><button id="connect-account" class="primary-button">Подключить выбранный профиль</button></div>
+  </article>
+  <div class="settings-side"><article class="panel"><p class="eyebrow">ПОВЕДЕНИЕ</p><h2>Коротко и по делу</h2><label class="toggle-label" for="announce"><span>Говорить «Включаю»<small>Штатным голосом Алисы перед музыкой</small></span><input id="announce" type="checkbox" role="switch"></label></article></div>
+ </section>
+</main>
+</div>
+</body></html>

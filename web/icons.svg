@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<symbol id="play" viewBox="0 0 24 24"><path d="M8 5.5 19 12 8 18.5Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/></symbol>
+<symbol id="previous" viewBox="0 0 24 24"><path d="M5 5v14"/><path d="m19 5-10 7 10 7Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="next" viewBox="0 0 24 24"><path d="M19 5v14"/><path d="m5 5 10 7-10 7Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="queue" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m16 16 4.5 4.5"/></symbol>
+<symbol id="heart" viewBox="0 0 24 24"><path d="M20.2 5.8a5 5 0 0 0-7.1 0L12 6.9l-1.1-1.1a5 5 0 0 0-7.1 7.1L12 21l8.2-8.1a5 5 0 0 0 0-7.1Z"/></symbol>
+<symbol id="playlist" viewBox="0 0 24 24"><path d="M4 5h14M4 10h10M4 15h7M18 12v7"/><ellipse cx="15.5" cy="19" rx="2.5" ry="2"/><path d="m18 12 4-1v4"/></symbol>
+<symbol id="settings" viewBox="0 0 24 24"><path d="M4 6h4m4 0h8M4 12h9m4 0h3M4 18h3m4 0h9"/><circle cx="10" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></symbol>
+<symbol id="account" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></symbol>
+<symbol id="wave" viewBox="0 0 24 24"><path d="M4 10v4m4-8v12m4-15v18m4-15v12m4-8v4"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24"><path d="M6 18 18 6M7 6h11v11"/></symbol>
+<symbol id="microphone" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
+</svg>

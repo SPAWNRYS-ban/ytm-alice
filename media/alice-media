@@ -1,0 +1,126 @@
+#!/bin/sh
+# Global MPRIS/BlueZ integration for the Station. No evdev grabs or key remapping.
+set -eu
+umask 077
+ROOT=${YAM_ROOT:-/data/yam}
+VAR=$ROOT/var/local.alice-media
+BUS=unix:path=/tmp/btbus/socket
+RUN=/tmp/btbus
+HOOK=/etc/init.d/S55zbtproxy
+ACTIVATION=/usr/share/dbus-1/system-services/org.bluez.service
+BT="S51bluetoothd S52bluealsa S53bluealsa-aplay S54default-bluez-agent"
+stop_bt() {
+    for service in S54default-bluez-agent S53bluealsa-aplay S52bluealsa S51bluetoothd; do
+        /etc/init.d/$service stop
+    done
+}
+start_bt() {
+    for service in $BT; do
+        DBUS_SYSTEM_BUS_ADDRESS=$BUS /etc/init.d/$service start
+        sleep 1
+    done
+}
+alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
+start() {
+    alive "$RUN/supervisor.pid" && return 0
+    [ -f "$ACTIVATION.disabled" ] || { echo 'Сначала: alice-media install' >&2; exit 1; }
+    stop_bt
+    n=0
+    while pidof bluetoothd bluealsa bluealsa-aplay just-works-bluez-agent >/dev/null; do
+        n=$((n+1)); [ "$n" -le 50 ] || { echo 'Bluetooth не остановился' >&2; exit 1; }
+        usleep 100000
+    done
+    mkdir -p "$RUN"
+    chmod 700 "$RUN"
+    if [ ! -S "$RUN/socket" ]; then
+        dbus-daemon --config-file="$ROOT/share/local.ytm-alice/media/bus.conf" --fork
+    fi
+    start_bt
+    (
+        child=''
+        trap '[ -z "$child" ] || kill "$child" 2>/dev/null; exit 0' TERM INT
+        while :; do
+            BT_PRIVATE_BUS=$BUS MPRIS_BUS=$BUS BT_PROXY_ALIASES='ytm_alice=YouTube Music,ShairportSync=AirPlay,spotifyd=Spotify' \
+                "$ROOT/bin/bt-proxy" >> /tmp/bt-proxy.log 2>&1 &
+            child=$!
+            echo "$child" > "$RUN/proxy.pid"
+            wait "$child" || true
+            child=''
+            rm -f "$RUN/proxy.pid"
+            sleep 2
+        done
+    ) < /dev/null > /dev/null 2>&1 &
+    echo $! > "$RUN/supervisor.pid"
+    echo 'Общий медиаслой запущен.'
+}
+stop() {
+    if alive "$RUN/supervisor.pid"; then kill "$(cat "$RUN/supervisor.pid")" 2>/dev/null || true; fi
+    if alive "$RUN/proxy.pid"; then
+        pid=$(cat "$RUN/proxy.pid")
+        target=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+        case "$target" in */bt-proxy) kill "$pid" 2>/dev/null || true ;; esac
+    fi
+    rm -f "$RUN/supervisor.pid" "$RUN/proxy.pid"
+}
+install_hook() {
+    [ "$(id -u)" = 0 ] || { echo 'Нужен root' >&2; exit 1; }
+    case "$ROOT" in *"'"*|*'
+'*) echo 'Некорректный YAM_ROOT' >&2; exit 1 ;; esac
+    if [ -f "$HOOK" ] && ! grep -q 'alice-media managed boot hook' "$HOOK"; then
+        echo 'Путь автозапуска занят другим компонентом' >&2; exit 1
+    fi
+    if [ -f "$ACTIVATION.disabled" ] && [ ! -f "$VAR/activation-managed" ]; then
+        echo 'D-Bus activation уже изменена другим компонентом' >&2; exit 1
+    fi
+    mkdir -p "$VAR"
+    mount -o remount,rw /
+    trap 'mount -o remount,ro /' EXIT
+    if [ -f "$ACTIVATION" ]; then
+        mv "$ACTIVATION" "$ACTIVATION.disabled"
+        touch "$VAR/activation-managed"
+    fi
+    cat > "$HOOK" <<EOF
+#!/bin/sh
+# alice-media managed boot hook
+export YAM_ROOT='$ROOT'
+exec '$ROOT/bin/alice-media' "\${1:-start}"
+EOF
+    chmod 755 "$HOOK"
+    sync
+    mount -o remount,ro /
+    trap - EXIT
+    echo 'Автозапуск установлен. Применение: перезагрузка или alice-media start.'
+}
+uninstall_hook() {
+    [ "$(id -u)" = 0 ] || { echo 'Нужен root' >&2; exit 1; }
+    stop
+    stop_bt
+    if alive "$RUN/dbus.pid"; then kill "$(cat "$RUN/dbus.pid")" 2>/dev/null || true; fi
+    mount -o remount,rw /
+    trap 'mount -o remount,ro /' EXIT
+    if [ -f "$HOOK" ] && grep -q 'alice-media managed boot hook' "$HOOK"; then rm "$HOOK"; fi
+    if [ -f "$VAR/activation-managed" ] && [ -f "$ACTIVATION.disabled" ]; then
+        mv "$ACTIVATION.disabled" "$ACTIVATION"
+        rm "$VAR/activation-managed"
+    fi
+    sync
+    mount -o remount,ro /
+    trap - EXIT
+    for service in $BT; do /etc/init.d/$service start; done
+    echo 'Штатный Bluetooth возвращён. Перезагрузка очистит оставшиеся медиасессии.'
+}
+case "${1:-status}" in
+    install) install_hook ;;
+    uninstall) uninstall_hook ;;
+    start) start ;;
+    stop) stop ;;
+    restart) stop; sleep 1; start ;;
+    status)
+        if alive "$RUN/supervisor.pid" && alive "$RUN/proxy.pid" && [ -S "$RUN/socket" ]; then
+            echo 'Общий медиаслой активен.'
+            DBUS_SYSTEM_BUS_ADDRESS=$BUS dbus-send --system --print-reply --dest=org.freedesktop.DBus \
+                /org/freedesktop/DBus org.freedesktop.DBus.ListNames | grep 'org.mpris.MediaPlayer2' || true
+        else echo 'Общий медиаслой не запущен.'; exit 1; fi
+        ;;
+    *) echo 'alice-media install|uninstall|start|stop|restart|status' >&2; exit 2 ;;
+esac

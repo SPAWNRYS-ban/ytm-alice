@@ -1,0 +1,54 @@
+name: Ошибка
+description: Воспроизводимая проблема с воспроизведением, панелью или установкой.
+title: "[Ошибка] "
+body:
+  - type: markdown
+    attributes:
+      value: "Проверьте похожие issues. Не прикладывайте cookies, токены, SSH-ключи и подписанные ссылки на потоки."
+  - type: input
+    id: versions
+    attributes:
+      label: Версии ytm-alice и YAM
+      placeholder: "ytm-alice --version; yam --version"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Модель Станции и версия прошивки
+      placeholder: "Станция Лайт 1 (YNDX-00025), версия прошивки из приложения"
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Где возникает ошибка
+      options: [Голос, Веб-панель, CLI на компьютере, CLI на Станции, Установка или обновление]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      description: "Точная команда/фраза, действия, название или публичная ссылка на трек, время сбоя."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемый результат
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактический результат
+      description: "Точный текст ошибки. Если звука нет — что показывает панель?"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Диагностика
+      description: "Релевантный фрагмент логов /tmp/ytm-alice.log и /tmp/ytm-alice-player.log; удалите личные данные. Инструкция — CONTRIBUTING.md."
+      render: text
