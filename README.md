@@ -8,21 +8,27 @@
 Станции; штатная Алиса и кнопка паузы продолжают работать.
 
 > [!WARNING]
-> Проверено на **Яндекс Станции Лайт 1 (YNDX-00025, `yandexmicro`)**.
-> На **Яндекс Станции Мини 2 с часами (`yandexmini_2`)** подтверждены установка,
-> запуск и воспроизведение. Работа на остальных моделях пока не проверена.
+> Интеграция с Luna тестируется на **Яндекс Станции Лайт 1 (`yandexmicro`)**.
+> Для Мини 2 (`yandexmini_2`) проверяется сборка пакета; на устройстве эта
+> экспериментальная версия пока не проверена. Работа на остальных моделях
+> также не проверена.
 
 ## Установка на Станцию
 
-Требуется установленный [YAM v2](https://github.com/nyakokitsu/yam).
-Скачайте `.yampkg` из [последнего релиза](https://github.com/SPAWNRYS-ban/ytm-alice/releases/latest) и установите:
+Эта ветка — экспериментальная интеграция с Luna. Требуются установленный
+[YAM v2](https://github.com/nyakokitsu/yam) и сборка Luna с поддержкой бинарных
+плагинов YAM. Обычная Luna 0.2.7 пока не подходит.
+Порядок установки и ограничения: [интеграция с Luna](docs/LUNA.md).
+
+Для этой ветки используйте `.yampkg` из тестового набора вместе с доработанной
+Luna. Публичный релиз 0.7.1 устанавливается по прежней инструкции.
 
 Выберите пакет для своей модели: `yandexmicro` — Лайт 1,
 `yandexmini_2` — Мини 2 с часами. Ниже приведён пример для Лайт 1;
-для Мини 2 используйте файл `ytm-alice-0.7.1-yandexmini_2.yampkg`.
+для Мини 2 используйте файл `ytm-alice-0.8.0-luna.1-yandexmini_2.yampkg`.
 
 ```sh
-yam install --yes ytm-alice-0.7.1-yandexmicro.yampkg
+yam install --yes ytm-alice-0.8.0-luna.1-yandexmicro.yampkg
 /data/yam/bin/ytm-alice daemon install
 ```
 
@@ -49,8 +55,8 @@ yam install --yes ytm-alice-0.7.1-yandexmicro.yampkg
 На компьютере с Linux или macOS нужны Python 3 с `curses` и curl:
 
 ```sh
-curl -fsSL https://github.com/SPAWNRYS-ban/ytm-alice/releases/latest/download/install-client.sh -o /tmp/ytm-alice-install-client.sh
-sh /tmp/ytm-alice-install-client.sh
+curl -fsSL https://github.com/SPAWNRYS-ban/ytm-alice/releases/download/v0.8.0-luna.1/install-client.sh -o /tmp/ytm-alice-install-client.sh
+YTM_ALICE_RELEASE_URL=https://github.com/SPAWNRYS-ban/ytm-alice/releases/download/v0.8.0-luna.1 sh /tmp/ytm-alice-install-client.sh
 ytm-alice connect http://IP_СТАНЦИИ
 ytm-alice
 ```

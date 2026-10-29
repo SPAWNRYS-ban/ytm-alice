@@ -65,12 +65,15 @@ Python и десктопный клиент на самой Станции не 
 
 Для ручной установки `.yampkg` на самой Станции:
 
+Для экспериментальной версии 0.8.0-luna.1 сначала установите доработанную Luna
+по [инструкции](LUNA.md).
+
 Выберите пакет для своей модели: `yandexmicro` — Лайт 1,
 `yandexmini_2` — Мини 2 с часами. Ниже приведён пример для Лайт 1;
-для Мини 2 используйте файл `ytm-alice-0.7.1-yandexmini_2.yampkg`.
+для Мини 2 используйте файл `ytm-alice-0.8.0-luna.1-yandexmini_2.yampkg`.
 
 ```sh
-yam install --yes /tmp/ytm-alice-0.7.1-yandexmicro.yampkg
+yam install --yes /tmp/ytm-alice-0.8.0-luna.1-yandexmicro.yampkg
 /data/yam/bin/ytm-alice daemon install
 yam doctor
 ```

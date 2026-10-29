@@ -1,3 +1,2 @@
-* text=auto eol=lf
-*.svg text
-*.sh text eol=lf
+# Unified diffs prefix blank context lines with one required space.
+source/luna-host/*.patch whitespace=-blank-at-eol

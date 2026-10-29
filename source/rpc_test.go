@@ -108,14 +108,46 @@ func TestJumpUsesQueueAndRejectsInvalidIndexWithoutChangingIt(t *testing.T) {
 	}
 }
 
-type inputBuffer struct{ bytes.Buffer }
+type inputBuffer struct {
+	bytes.Buffer
+	ack func(string)
+}
+
+func (b *inputBuffer) Write(data []byte) (int, error) {
+	n, err := b.Buffer.Write(data)
+	if b.ack != nil {
+		go b.ack(string(data))
+	}
+	return n, err
+}
+
+func confirmedTestPlayer(s *Server) *inputBuffer {
+	input := &inputBuffer{}
+	s.player = &nativePlayer{in: input, confirmed: "playing"}
+	input.ack = func(command string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.player == nil {
+			return
+		}
+		if command == "pause\n" {
+			s.player.confirmed = "paused"
+			s.state.Status = "paused"
+		}
+		if command == "resume\n" {
+			s.player.confirmed = "playing"
+			s.state.Status = "playing"
+		}
+	}
+	return input
+}
 
 func (b *inputBuffer) Close() error { return nil }
 
 func TestToggleUsesActualPlayerState(t *testing.T) {
 	t.Setenv("YTM_ALICE_DATA", t.TempDir())
-	input := &inputBuffer{}
-	s := &Server{state: State{Status: "playing"}, player: &nativePlayer{in: input}}
+	s := &Server{state: State{Status: "playing"}}
+	input := confirmedTestPlayer(s)
 	for _, status := range []string{"paused", "playing", "paused"} {
 		result := s.command(context.Background(), request{Action: "toggle"})
 		if result.Error != "" || result.State.Status != status {

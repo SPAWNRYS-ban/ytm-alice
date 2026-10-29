@@ -3,10 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,20 +13,15 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path/filepath"
-	"runtime/debug"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
-const version = "0.7.1"
+const version = "0.8.0-luna.1"
 const relayAddr = "127.0.0.1:18883"
 
 func dataDir() string {
@@ -74,34 +67,6 @@ type response struct {
 	Playlists []Playlist       `json:"playlists,omitempty"`
 	Accounts  []YouTubeAccount `json:"accounts,omitempty"`
 }
-type nativePlayer struct {
-	cmd     *exec.Cmd
-	in      io.WriteCloser
-	mu      sync.Mutex
-	token   string
-	source  streamInfo
-	attempt int
-}
-
-func (p *nativePlayer) send(line string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.in != nil {
-		fmt.Fprintln(p.in, line)
-	}
-}
-func (p *nativePlayer) stop() {
-	p.send("stop")
-	if p.in != nil {
-		p.in.Close()
-	}
-	time.AfterFunc(2*time.Second, func() {
-		if p.cmd.Process != nil {
-			p.cmd.Process.Kill()
-		}
-	})
-}
-
 type Server struct {
 	mu             sync.Mutex
 	state          State
@@ -113,6 +78,12 @@ type Server struct {
 	speechMu       sync.Mutex
 	closing        bool
 	mediaConnected atomic.Bool
+	luna           *lunaClient
+	retiring       []*nativePlayer
+	coordinatorMu  sync.Mutex
+	intentMu       sync.Mutex
+	intentCancel   context.CancelFunc
+	intent         uint64
 }
 
 func (s *Server) snapshot() State {
@@ -140,18 +111,7 @@ func (s *Server) saveLocked() {
 		os.Rename(path+".tmp", path)
 	}
 }
-func (s *Server) stopLocked() {
-	s.generation++
-	if s.prepCancel != nil {
-		s.prepCancel()
-		s.prepCancel = nil
-	}
-	if s.player != nil {
-		s.player.stop()
-		s.player = nil
-	}
-}
-func (s *Server) command(ctx context.Context, r request) response {
+func (s *Server) execute(ctx context.Context, r request) response {
 	switch r.Action {
 	case "auth-status", "auth-check", "auth-import", "auth-logout", "auth-discover", "auth-accounts", "auth-select":
 		return s.authCommand(ctx, r)
@@ -255,27 +215,17 @@ func (s *Server) command(ctx context.Context, r request) response {
 		case "announce-on", "announce-off":
 			s.state.Announce = r.Action == "announce-on"
 		case "pause":
-			if s.player != nil {
-				s.player.send("pause")
-				s.state.Status = "paused"
-			} else if s.state.Status == "buffering" || s.state.Status == "searching" {
-				s.stopLocked()
-				s.state.Status = "paused"
-			} else {
-				s.mu.Unlock()
-				return response{Error: "плеер не запущен"}
+			s.mu.Unlock()
+			if err := s.setPlayback(ctx, "paused"); err != nil {
+				return response{Error: err.Error()}
 			}
+			return response{State: ptrState(s.snapshot())}
 		case "resume":
-			if s.player != nil {
-				s.player.send("resume")
-				s.state.Status = "playing"
-			} else {
-				pos := int64(0)
-				s.mu.Unlock()
-				s.start(pos, false)
-				v := s.snapshot()
-				return response{State: &v}
+			s.mu.Unlock()
+			if err := s.setPlayback(ctx, "playing"); err != nil {
+				return response{Error: err.Error()}
 			}
+			return response{State: ptrState(s.snapshot())}
 		case "stop":
 			s.stopLocked()
 			s.state.Status = "stopped"
@@ -297,7 +247,8 @@ func (s *Server) command(ctx context.Context, r request) response {
 			s.state.Index = i
 			s.state.PositionMS = 0
 			s.mu.Unlock()
-			s.start(0, true)
+			// Keep native TTS outside Luna's bounded transport operation.
+			s.start(0, s.luna == nil)
 			v := s.snapshot()
 			return response{State: &v}
 		}
@@ -316,13 +267,15 @@ func (s *Server) command(ctx context.Context, r request) response {
 					defer s.speechMu.Unlock()
 					t := v.Queue[v.Index]
 					if err := speakOwned(t.Artists + ". " + t.Title); err != nil {
-						log.Print("track announcement not confirmed")
+						log.Print("track announcement not confirmed: ", err)
 					}
 				}()
 			}
 			return response{State: &v}
 		}
-		cancelDialog()
+		if err := cancelDialog(); err != nil {
+			return response{Error: "не удалось завершить диалог Алисы"}
+		}
 		time.Sleep(120 * time.Millisecond)
 		return s.command(ctx, request{Action: a, Query: q})
 	default:
@@ -357,178 +310,6 @@ func (s *Server) fillRadio(g uint64, id string) {
 	if len(out) > 1 {
 		s.state.Queue = out
 		s.saveLocked()
-	}
-}
-func (s *Server) start(offset int64, announce bool) {
-	s.startGuarded(offset, announce, 0, nil)
-}
-func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected *uint64) {
-	s.mu.Lock()
-	if expected != nil && s.generation != *expected {
-		s.mu.Unlock()
-		return
-	}
-	if s.closing || len(s.state.Queue) == 0 {
-		s.mu.Unlock()
-		return
-	}
-	s.stopLocked()
-	g := s.generation
-	t := s.state.Queue[s.state.Index]
-	s.state.Status = "buffering"
-	s.state.Error = ""
-	s.state.PositionMS = offset
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	s.prepCancel = cancel
-	say := announce && s.state.Announce
-	s.saveLocked()
-	s.mu.Unlock()
-	go func() {
-		defer cancel()
-		speechDone := make(chan struct{})
-		if say {
-			go func() {
-				s.speechMu.Lock()
-				if e := speak("Включаю"); e != nil {
-					log.Print("native announcement not confirmed")
-				}
-				s.speechMu.Unlock()
-				close(speechDone)
-			}()
-		} else {
-			close(speechDone)
-		}
-		src, err := s.catalog.resolve(ctx, t.ID)
-		select {
-		case <-speechDone:
-		case <-ctx.Done():
-		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.generation != g || s.closing {
-			return
-		}
-		if err != nil {
-			s.state.Status = "error"
-			s.state.Error = err.Error()
-			s.saveLocked()
-			return
-		}
-		tokenBytes := make([]byte, 16)
-		rand.Read(tokenBytes)
-		token := hex.EncodeToString(tokenBytes)
-		exe, _ := os.Executable()
-		cmd := exec.Command(filepath.Join(filepath.Dir(exe), "ytm-alice-player"), "http://"+relayAddr+"/audio/"+token)
-		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH=/system/vendor/quasar:/system/vendor/quasar/libs")
-		in, e := cmd.StdinPipe()
-		if e != nil {
-			s.failLocked("не удалось создать плеер")
-			return
-		}
-		out, e := cmd.StdoutPipe()
-		if e != nil {
-			in.Close()
-			s.failLocked("не удалось создать плеер")
-			return
-		}
-		// The helper sees only a random loopback URL; never the signed CDN URL.
-		playerLog, logErr := os.OpenFile("/tmp/ytm-alice-player.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-		if logErr == nil {
-			cmd.Stderr = playerLog
-			defer playerLog.Close()
-		} else {
-			cmd.Stderr = io.Discard
-		}
-		p := &nativePlayer{cmd: cmd, in: in, token: token, source: src, attempt: attempt}
-		s.player = p
-		if e = cmd.Start(); e != nil {
-			s.player = nil
-			in.Close()
-			s.failLocked("штатный GStreamer недоступен")
-			return
-		}
-		go s.monitor(p, g, out, offset)
-	}()
-}
-func (s *Server) failLocked(message string) {
-	s.state.Status = "error"
-	s.state.Error = message
-	s.saveLocked()
-}
-func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset int64) {
-	scanner := bufio.NewScanner(out)
-	natural := false
-	seeked := offset == 0
-	for scanner.Scan() {
-		var ev struct {
-			Event      string `json:"event"`
-			PositionMS int64  `json:"position_ms"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &ev) != nil {
-			continue
-		}
-		s.mu.Lock()
-		if s.player != p || s.generation != g {
-			s.mu.Unlock()
-			break
-		}
-		switch ev.Event {
-		case "playing":
-			s.state.Status = "playing"
-			if !seeked {
-				p.send("seek " + strconv.FormatInt(offset, 10))
-				seeked = true
-			}
-			s.saveLocked()
-		case "paused":
-			if s.state.Status != "buffering" {
-				s.state.Status = "paused"
-			}
-		case "position":
-			s.state.PositionMS = ev.PositionMS
-		case "eos":
-			natural = true
-		case "error":
-			s.failLocked("ошибка воспроизведения YouTube")
-		}
-		s.mu.Unlock()
-	}
-	err := p.cmd.Wait()
-	p.in.Close()
-	s.mu.Lock()
-	if s.player != p || s.generation != g {
-		s.mu.Unlock()
-		return
-	}
-	s.player = nil
-	if !natural || err != nil {
-		if !s.closing {
-			if p.attempt == 0 && s.state.PositionMS < 3000 {
-				s.state.Status = "buffering"
-				s.state.Error = ""
-				s.mu.Unlock()
-				go func() {
-					s.catalog.discardStream(p.source)
-					time.Sleep(300 * time.Millisecond)
-					s.startGuarded(0, false, 1, &g)
-				}()
-				return
-			}
-			s.failLocked("аудиопоток прерван")
-		}
-		s.mu.Unlock()
-		return
-	}
-	if s.state.Index+1 < len(s.state.Queue) {
-		s.state.Index++
-		s.state.PositionMS = 0
-		s.mu.Unlock()
-		s.start(0, false)
-	} else {
-		s.state.Status = "stopped"
-		s.state.PositionMS = 0
-		s.saveLocked()
-		s.mu.Unlock()
 	}
 }
 func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
@@ -605,173 +386,6 @@ func byteRange(header string, length int64) (int64, int64, error) {
 	}
 	return start, end, nil
 }
-func normalize(s string) string {
-	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
-		if r == ',' || r == '.' || r == '!' || r == '?' || r == '«' || r == '»' {
-			return -1
-		}
-		return r
-	}, strings.ToLower(s))), " ")
-}
-func voiceAction(text string) (string, string, bool) {
-	q := normalize(text)
-	q = strings.TrimSpace(strings.TrimPrefix(q, "алиса "))
-	q = strings.TrimSpace(strings.TrimSuffix(q, " пожалуйста"))
-	if q == "поставь мои лайки" || q == "включи мои лайки" || q == "включи понравившиеся" {
-		return "play", "мои лайки", true
-	}
-	controls := map[string]string{"дальше": "next", "следующий трек": "next", "следующая песня": "next", "назад": "previous", "предыдущий трек": "previous", "предыдущая песня": "previous", "пауза": "pause", "поставь на паузу": "pause", "продолжи": "resume", "продолжи музыку": "resume", "стоп": "stop", "выключи музыку": "stop", "выключи ютуб": "stop", "что сейчас играет": "what", "что играет": "what"}
-	if a, ok := controls[q]; ok {
-		return a, "", true
-	}
-	for _, p := range []string{"включи на ютубе ", "включи в ютубе ", "включи на youtube ", "включи youtube music ", "включи ютуб музыку ", "включи ютуб ", "поставь на ютубе ", "поставь в ютубе ", "поставь на youtube ", "поставь youtube music ", "поставь ютуб ", "ютуб музыка ", "youtube music "} {
-		if strings.HasPrefix(q, p) {
-			query := strings.TrimSpace(q[len(p):])
-			if query != "" {
-				return "play", query, true
-			}
-		}
-	}
-	for _, verb := range []string{"поставь ", "включи "} {
-		if !strings.HasPrefix(q, verb) {
-			continue
-		}
-		query := strings.TrimSpace(strings.TrimPrefix(q, verb))
-		// Explicit music nouns take precedence: a song may itself contain words
-		// such as "свет" or "таймер". Retain album/playlist nouns for the catalog.
-		for _, noun := range []string{"песню ", "трек ", "композицию ", "музыку ", "альбом ", "плейлист "} {
-			if strings.HasPrefix(query, noun) {
-				if noun != "альбом " && noun != "плейлист " {
-					query = strings.TrimSpace(strings.TrimPrefix(query, noun))
-				}
-				if query != "" {
-					return "play", query, true
-				}
-			}
-		}
-		// Bare "включи" can name an arbitrary smart-home device or scene.
-		// "Поставь <artist/title>" is the shorthand for music; native device,
-		// timer and built-in content requests still belong to Alice.
-		if verb == "поставь " && query != "" && !nativeVoiceTarget(query) {
-			return "play", query, true
-		}
-	}
-	return "", "", false
-}
-
-func nativeVoiceTarget(query string) bool {
-	words := strings.Fields(query)
-	if len(words) == 0 {
-		return true
-	}
-	first := words[0]
-	for _, stem := range []string{"на", "в", "песню", "трек", "композицию", "альбом", "плейлист", "музык", "мою", "мой", "мои", "свою", "любим", "что-нибудь", "таймер", "будильник", "напомин", "свет", "ламп", "люстр", "розет", "телевизор", "кондиционер", "увлажн", "пылесос", "чайник", "температур", "отоплен", "режим", "громк", "звук", "радио", "сказк", "подкаст", "новост", "погод", "блютуз", "bluetooth"} {
-		if (stem == "на" || stem == "в") && first != stem {
-			continue
-		}
-		if strings.HasPrefix(first, stem) {
-			return true
-		}
-	}
-	for _, word := range words {
-		for _, unit := range []string{"минут", "секунд", "градус", "процент"} {
-			if strings.HasPrefix(word, unit) {
-				return true
-			}
-		}
-	}
-	return false
-}
-func (s *Server) voiceLoop(ctx context.Context) {
-	last := ""
-	lastTime := time.Time{}
-	var trackRequests []string
-	for ctx.Err() == nil {
-		c, e := net.DialTimeout("tcp", ipcAddress(), time.Second)
-		if e != nil {
-			time.Sleep(time.Second)
-			continue
-		}
-		for ctx.Err() == nil {
-			c.SetReadDeadline(time.Now().Add(2 * time.Second))
-			raw, e := frameRead(c)
-			if e != nil {
-				break
-			}
-			ev := decodeAlice(raw)
-			if ev.HasState {
-				s.mu.Lock()
-				p := s.player
-				s.mu.Unlock()
-				if p != nil {
-					if ev.State == 0 {
-						p.send("volume 1")
-					} else {
-						p.send("volume 0.2")
-					}
-				}
-			}
-			q := normalize(ev.Text)
-			a, _, ok := voiceAction(q)
-			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
-				continue
-			}
-			if !ok {
-				// Let a native music request take over without mixing two players.
-				if strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
-					s.mu.Lock()
-					s.stopLocked()
-					s.state.Status = "stopped"
-					s.state.Error = ""
-					s.state.PositionMS = 0
-					s.saveLocked()
-					s.mu.Unlock()
-				}
-				continue
-			}
-			if a != "play" {
-				v := s.snapshot()
-				if v.Status != "playing" && v.Status != "paused" && v.Status != "buffering" && v.Status != "error" {
-					continue
-				}
-				// Native Bluetooth control already calls MPRIS; a second Next
-				// from our speech listener would skip two tracks.
-				if s.mediaConnected.Load() && (a == "next" || a == "previous" || a == "pause" || a == "resume") {
-					continue
-				}
-			}
-			if a == "what" && ev.RequestID != "" {
-				if slices.Contains(trackRequests, ev.RequestID) {
-					continue
-				}
-				trackRequests = append(trackRequests, ev.RequestID)
-				if len(trackRequests) > 64 {
-					trackRequests = trackRequests[1:]
-				}
-				// A final ASR result can precede BUSY. Cancel on the existing
-				// event connection before the cloud starts music recognition.
-				c.SetWriteDeadline(time.Now().Add(time.Second))
-				if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
-					log.Print("early track-query cancellation not confirmed")
-				}
-			} else if q == last && time.Since(lastTime) < 10*time.Second {
-				continue
-			}
-			last = q
-			lastTime = time.Now()
-			log.Printf("voice route: %s", a)
-			go func(text string) {
-				c, cancel := context.WithTimeout(ctx, 45*time.Second)
-				defer cancel()
-				res := s.command(c, request{Action: "voice", Query: text})
-				if res.Error != "" {
-					log.Print("voice music request failed")
-				}
-			}(ev.Text)
-		}
-		c.Close()
-	}
-}
 func newCatalog() *Catalog {
 	roots, _ := x509.SystemCertPool()
 	if roots == nil {
@@ -782,80 +396,6 @@ func newCatalog() *Catalog {
 	}
 	h := &http.Client{Timeout: 40 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second, ResponseHeaderTimeout: 15 * time.Second}}
 	return &Catalog{http: h, cache: map[string]catalogEntry{}, streams: map[string]streamInfo{}}
-}
-func serve() error {
-	debug.SetMemoryLimit(48 << 20)
-	debug.SetGCPercent(50)
-	if e := os.MkdirAll(dataDir(), 0700); e != nil {
-		return e
-	}
-	if e := os.MkdirAll(runDir(), 0700); e != nil {
-		return e
-	}
-	// An existing live socket belongs to another service instance.
-	if c, e := net.DialTimeout("unix", socketPath(), time.Second); e == nil {
-		c.Close()
-		return errors.New("ytm-alice уже запущен")
-	}
-	os.Remove(socketPath())
-	listener, e := net.Listen("unix", socketPath())
-	if e != nil {
-		return e
-	}
-	defer listener.Close()
-	defer os.Remove(socketPath())
-	os.Chmod(socketPath(), 0600)
-	os.WriteFile(filepath.Join(runDir(), "pid"), []byte(strconv.Itoa(os.Getpid())), 0600)
-	defer os.Remove(filepath.Join(runDir(), "pid"))
-	s := &Server{state: State{Version: version, Status: "stopped", Announce: true, Queue: []Track{}}, catalog: newCatalog()}
-	if err := s.catalog.loadAuth(); err != nil {
-		log.Print(err)
-	}
-	if raw, e := os.ReadFile(filepath.Join(dataDir(), "state.json")); e == nil {
-		json.Unmarshal(raw, &s.state)
-		s.state.Version = version
-		s.state.Status = "stopped"
-		s.state.PositionMS = 0
-		s.state.Error = ""
-		if s.state.Index < 0 || s.state.Index >= len(s.state.Queue) {
-			s.state.Index = 0
-		}
-	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer cancel()
-	closeWeb, webErr := s.startWeb()
-	if webErr != nil {
-		log.Print("web panel unavailable: ", webErr)
-	} else {
-		defer closeWeb()
-	}
-	httpServer := &http.Server{Addr: relayAddr, Handler: http.HandlerFunc(s.relay), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
-	errCh := make(chan error, 1)
-	go func() { errCh <- httpServer.ListenAndServe() }()
-	go s.voiceLoop(ctx)
-	go s.mediaLoop(ctx)
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go s.controlConnection(ctx, conn)
-		}
-	}()
-	log.Print("ytm-alice ", version, " ready; native Alice, local control, direct YouTube")
-	select {
-	case <-ctx.Done():
-	case e = <-errCh:
-	}
-	s.mu.Lock()
-	s.closing = true
-	s.stopLocked()
-	s.state.Status = "stopped"
-	s.saveLocked()
-	s.mu.Unlock()
-	httpServer.Close()
-	return e
 }
 func call(r request) (response, error) {
 	c, e := net.DialTimeout("unix", socketPath(), 2*time.Second)

@@ -31,8 +31,8 @@ func TestMPRISControlsActualServerThroughIsolatedBus(t *testing.T) {
 		t.Fatal(err)
 	}
 	address = strings.TrimSpace(address)
-	input := &inputBuffer{}
-	s := &Server{state: State{Status: "playing", Queue: []Track{{ID: "abcdefghijk", Title: "Test song", DurationMS: 123000}}, PositionMS: 1200}, player: &nativePlayer{in: input}}
+	s := &Server{state: State{Status: "playing", Queue: []Track{{ID: "abcdefghijk", Title: "Test song", DurationMS: 123000}}, PositionMS: 1200}}
+	input := confirmedTestPlayer(s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.mediaSession(ctx, address) }()

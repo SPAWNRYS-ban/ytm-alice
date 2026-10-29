@@ -1,0 +1,497 @@
+diff --git a/docs/MEDIA_PROVIDERS.md b/docs/MEDIA_PROVIDERS.md
+index d32c1d8..ee090f0 100644
+--- a/docs/MEDIA_PROVIDERS.md
++++ b/docs/MEDIA_PROVIDERS.md
+@@ -24,7 +24,9 @@ actions = ["pause", "resume"]
+ `pause` is required. `resume`, `next` and `previous` are optional. The label is
+ 1–80 UTF-8 bytes without control characters. Existing packages without this
+ section remain unchanged. This version uses the binary runtime API; it does
+-not add Lua bindings or enable binary packages imported from YAM.
++not add Lua bindings. Binary packages imported from YAM use the same invocation
++contract when binary execution is explicitly enabled; YAM owns the payload and
++Luna owns the process. Do not start the same player as a second YAM service.
+ 
+ ## Runtime protocol
+ 
+diff --git a/docs/PLUGINS.md b/docs/PLUGINS.md
+index e991015..79d53a3 100644
+--- a/docs/PLUGINS.md
++++ b/docs/PLUGINS.md
+@@ -91,6 +91,8 @@ Luna ищет каталог через `--yam-root`, `YAM_ROOT`, либо ав
+ установленного бинаря вида `$YAM_ROOT/pkgs/yam/luna/<version>/bin/luna`.
+ Для блокировки чтения во время транзакций Yam можно передать `--yam-run` или
+ задать `YAM_RUN`; Luna использует `$YAM_RUN/yam.lock` как shared lock. Если
++временный каталог или lock-файл отсутствуют после перезагрузки, Luna создаёт
++их без замены существующего файла. Если
+ `YAM_ROOT` известен, а `YAM_RUN` нет, Luna продолжает работу без блокировки и
+ пишет одно предупреждение.
+ 
+@@ -102,9 +104,29 @@ yam remove vasya/clock
+ ```
+ 
+ Состояние Luna и runtime log не записываются в дерево Yam. Они находятся в
+-`<data-dir>/plugins/plugin-state/<id>/`. Lua-плагины поддерживаются, binary-
+-плагины из Yam пока намеренно отклоняются.
++`<data-dir>/plugins/plugin-state/<id>/`. Бинарные плагины запускаются при
++`allow_plugin_binaries=true` и разрешении `exec`, как локальные пакеты.
++YAM владеет файлами, Luna владеет процессом и runtime-токеном. Не объявляйте
++второй сервис YAM для того же процесса. Перед обновлением остановите плагин.
++Процесс получает `YAM_ROOT`, `YAM_VAR` и `LUNA_PLUGIN_STATE`; пользовательские
++данные записывайте в var/state, каталог установленного плагина доступен только
++для чтения. Для автозапуска включите сервис через API или панель Luna.
+ 
+ Изменения обнаруживаются при старте, при ручном `POST /api/plugins/rescan` и
+ фоновым сканированием раз в 30 секунд. Источники можно посмотреть через
+ `GET /api/plugins/sources`.
++
++### Автозапуск на BusyBox init
++
++В интеграционной сборке есть `tools/luna-service`: он запускает Luna на
++`127.0.0.1:8099`, хранит состояние в `$YAM_ROOT/var/yam.luna` и создаёт временные
++каталоги после reboot. `luna-service install` устанавливает управляемый hook
++`/etc/init.d/S99zluna`; затем выполните `luna-service start`. Это вариант для
++установок YAM без супервизора сервисов. Не включайте одновременно второй
++способ автозапуска Luna. `luna-service uninstall` останавливает процесс и
++удаляет только управляемый hook.
++
++Пакет для одной станции после сборки её бинаря создаётся командой
++`tools/package-station.sh MODEL OUTPUT.yampkg`. Пути к host-пакеру YAM и профилям
++задаются через `YAM_BIN` и `YAM_PROFILES`. Проверка запуска с пустым временным
++каталогом: `python3 tests/yam_service.py target/debug/luna`.
+diff --git a/src/gateway.rs b/src/gateway.rs
+index 9de5d87..9dde668 100644
+--- a/src/gateway.rs
++++ b/src/gateway.rs
+@@ -269,7 +269,7 @@ fn default_update_interval() -> u64 {
+ impl Default for UpdateSettings {
+     fn default() -> Self {
+         Self {
+-            enabled: true,
++            enabled: false,
+             interval_minutes: default_update_interval(),
+         }
+     }
+@@ -1197,9 +1197,15 @@ impl PluginManager {
+         let Some(run) = &self.yam_run else {
+             return operation();
+         };
++        // YAM_RUN is commonly tmpfs: the host can start before any YAM
++        // transaction has recreated the shared lock after a reboot.
++        fs::create_dir_all(run)?;
+         let lock_path = run.join("yam.lock");
+         let file = fs::OpenOptions::new()
+             .read(true)
++            .write(true)
++            .create(true)
++            .truncate(false)
+             .open(&lock_path)
+             .with_context(|| format!("open YAM lock {}", lock_path.display()))?;
+         #[cfg(unix)]
+@@ -1261,9 +1267,6 @@ impl PluginManager {
+                     continue;
+                 }
+                 let reason = compatibility_error(&manifest, device);
+-                let reason = if location.source == PluginSource::Yam && manifest.launch.kind == LaunchKind::Binary {
+-                    Some("binary-плагины из YAM пока не поддерживаются".into())
+-                } else { reason };
+                 out.push(PluginInfo {
+                     directory: location.root,
+                     enabled: self.enabled.contains(&manifest.id),
+@@ -3963,15 +3966,12 @@ async fn run_binary(
+     cancelled: Arc<AtomicBool>,
+ ) -> Result<()> {
+     let device = app.device.lock().await.clone();
+-    let (manifest, root, state_root) = {
++    let (manifest, root, state_root, yam_root) = {
+         let plugins = app.plugins.lock().await;
+         if !plugins.enabled.contains(&id) {
+             bail!("package is disabled")
+         }
+         let (location, manifest) = plugins.location_and_manifest(&id)?;
+-        if location.source == PluginSource::Yam {
+-            bail!("binary-плагины из YAM пока не поддерживаются")
+-        }
+         if let Some(reason) = compatibility_error(&manifest, &device) {
+             bail!("package is incompatible: {reason}")
+         }
+@@ -3982,7 +3982,9 @@ async fn run_binary(
+         {
+             bail!("binary packages require the exec permission")
+         }
+-        (manifest, location.root, plugins.state_root(&id))
++        let yam_root = (location.source == PluginSource::Yam)
++            .then(|| plugins.yam_root.clone()).flatten();
++        (manifest, location.root, plugins.state_root(&id), yam_root)
+     };
+     let token = Uuid::new_v4().to_string();
+     let invocation_token = token.clone();
+@@ -3995,6 +3997,15 @@ async fn run_binary(
+     let result = task::spawn_blocking(move || -> Result<()> {
+         let executable = manifest.launch.path(&manifest).to_string();
+         safe_relative(&executable)?;
++        for directory in &manifest.launch.library_paths {
++            safe_relative(directory)?;
++        }
++        if manifest.launch.interpreter.as_deref().is_some_and(|value| value != "sh") {
++            bail!("launch.interpreter supports only sh")
++        }
++        if !root.join(&executable).is_file() {
++            bail!("binary launch path does not name a file")
++        }
+         fs::create_dir_all(&state_root)?;
+         let log = Arc::new(std::sync::Mutex::new(RotatingLog::open(
+             state_root.join("runtime.log"),
+@@ -4013,6 +4024,10 @@ async fn run_binary(
+             use std::os::unix::process::CommandExt;
+             command.process_group(0);
+         }
++        if let Some(yam_root) = yam_root {
++            command.env("YAM_VAR", yam_root.join("var"))
++                .env("YAM_ROOT", yam_root);
++        }
+         let mut child = command
+             .args(&manifest.launch.args)
+             .args(invocation_args)
+@@ -4021,6 +4036,7 @@ async fn run_binary(
+             .env("LUNA_API_URL", api_url)
+             .env("LUNA_API_TOKEN", token)
+             .env("LUNA_PLUGIN_ID", task_id)
++            .env("LUNA_PLUGIN_STATE", &state_root)
+             .stdout(Stdio::piped())
+             .stderr(Stdio::piped())
+             .spawn()?;
+@@ -4717,7 +4733,7 @@ async fn package_logs(
+     State(a): State<App>,
+     AxumPath(id): AxumPath<String>,
+ ) -> Result<String, ApiError> {
+-    validate_id(&id)?;
++    validate_id_or_yam(&id)?;
+     let path = a.plugins.lock().await.state_root(&id).join("runtime.log");
+     Ok(fs::read_to_string(path).unwrap_or_default())
+ }
+@@ -4733,7 +4749,7 @@ async fn runtime_permission(
+     headers: &HeaderMap,
+     permission: &str,
+ ) -> Result<(), ApiError> {
+-    validate_id(id)?;
++    validate_id_or_yam(id)?;
+     let token = runtime_token(headers)?;
+     if app.runtime_tokens.lock().await.get(id).map(String::as_str) != Some(token) {
+         return Err(ApiError(anyhow!("invalid runtime token")));
+diff --git a/tests/yam_binary_http.py b/tests/yam_binary_http.py
+new file mode 100644
+index 0000000..dfdc0b6
+--- /dev/null
++++ b/tests/yam_binary_http.py
+@@ -0,0 +1,115 @@
++#!/usr/bin/env python3
++"""Real runtime lifecycle for a read-only, symlinked YAM binary package."""
++import hashlib
++import json
++import os
++from pathlib import Path
++import socket
++import subprocess
++import sys
++import tempfile
++import time
++import urllib.error
++import urllib.request
++
++
++def call(base, path, body=None, token=None):
++    headers = {"Content-Type": "application/json"}
++    if token:
++        headers["X-Luna-Token"] = token
++    data = json.dumps(body).encode() if body is not None else None
++    with urllib.request.urlopen(urllib.request.Request(base + path, data=data, headers=headers), timeout=5) as reply:
++        raw = reply.read()
++        return json.loads(raw) if raw else None
++
++
++def wait(check):
++    deadline = time.monotonic() + 8
++    while time.monotonic() < deadline:
++        try:
++            value = check()
++            if value:
++                return value
++        except (OSError, urllib.error.HTTPError):
++            pass
++        time.sleep(.05)
++    raise AssertionError("fixture did not become ready")
++
++
++with tempfile.TemporaryDirectory(prefix="luna-yam-binary-") as temporary:
++    root = Path(temporary)
++    yam = root / "yam"
++    payload = yam / "pkgs/local/provider/1.0.0/plugin"
++    shared = yam / "share/luna/plugins/local.provider"
++    data = root / "data"
++    payload.mkdir(parents=True)
++    shared.mkdir(parents=True)
++    data.mkdir()
++    (payload / "plugin.toml").write_text('''id="local.provider"
++name="YAM fixture"
++version="1.0.0"
++entry="run.sh"
++permissions=["exec", "media.provider"]
++[launch]
++kind="binary"
++mode="service"
++path="run.sh"
++interpreter="sh"
++[media_provider]
++label="YAM fixture"
++actions=["pause", "resume"]
++''')
++    (payload / "run.sh").write_text('''set -eu
++test "$YAM_ROOT" = "$EXPECTED_YAM"
++test "$YAM_VAR" = "$YAM_ROOT/var"
++umask 077
++printf %s "$LUNA_API_TOKEN" > "$LUNA_PLUGIN_STATE/token"
++trap 'exit 0' TERM
++while :; do sleep 0.1; done
++''')
++    for path in payload.iterdir():
++        path.chmod(0o444)
++        (shared / path.name).symlink_to(path)
++    before = {p.name: hashlib.sha256(p.read_bytes()).digest() for p in payload.iterdir()}
++    (data / "settings.toml").write_text("allow_plugin_binaries=true\n")
++    plugins = data / "plugins"
++    plugins.mkdir()
++    (plugins / "enabled.json").write_text('["local.provider"]')
++    (plugins / "services.json").write_text('["local.provider"]')
++    with socket.socket() as sock:
++        sock.bind(("127.0.0.1", 0))
++        port = sock.getsockname()[1]
++    base = f"http://127.0.0.1:{port}"
++    with (root / "runtime.log").open("w") as log:
++        daemon = subprocess.Popen([str(Path(sys.argv[1]).resolve()), "--listen", f"127.0.0.1:{port}",
++                                   "--data-dir", str(data), "--yam-root", str(yam)],
++                                  env=dict(os.environ, EXPECTED_YAM=str(yam)), stdout=log, stderr=log)
++        try:
++            token_file = plugins / "plugin-state/local.provider/token"
++            wait(token_file.exists)
++            token = token_file.read_text()
++            listing = call(base, "/api/plugins")
++            assert len(listing) == 1 and listing[0]["source"] == "yam"
++            assert listing[0]["compatible"] and listing[0]["running"]
++            assert not call(base, "/api/settings")["updates"]["enabled"]
++            path = "/api/runtime/local.provider/provider/state"
++            call(base, path, {"state": "paused"}, token)
++            call(base, "/api/media/select", {"provider": "local.provider"})
++            assert call(base, "/api/media")["selected"] == "local.provider"
++            call(base, "/api/plugins/local.provider/stop", {})
++            try:
++                call(base, path, {"state": "paused"}, token)
++            except urllib.error.HTTPError:
++                pass
++            else:
++                raise AssertionError("stopped package retained runtime token")
++            after = {p.name: hashlib.sha256(p.read_bytes()).digest() for p in payload.iterdir()}
++            assert before == after and len(list(payload.iterdir())) == 2
++            print("PASS: YAM binary startup, namespace, provider, environment, read-only payload, token revocation, updates disabled")
++        except Exception:
++            log.flush()
++            print((root / "runtime.log").read_text()[-4000:])
++            raise
++        finally:
++            daemon.terminate()
++            daemon.wait(timeout=25)
+diff --git a/tests/yam_service.py b/tests/yam_service.py
+new file mode 100644
+index 0000000..903bb24
+--- /dev/null
++++ b/tests/yam_service.py
+@@ -0,0 +1,61 @@
++#!/usr/bin/env python3
++"""Exercise the BusyBox service helper with an empty runtime directory."""
++import json
++import os
++from pathlib import Path
++import shutil
++import socket
++import subprocess
++import sys
++import tempfile
++import urllib.request
++
++binary = Path(sys.argv[1]).resolve()
++with tempfile.TemporaryDirectory(prefix="luna-service-") as temporary:
++    root = Path(temporary)
++    yam = root / "yam"
++    (yam / "bin").mkdir(parents=True)
++    (yam / "bin/luna").symlink_to(binary)
++    helper = yam / "bin/luna-service"
++    shutil.copy2(Path(__file__).resolve().parents[1] / "tools/luna-service", helper)
++    with socket.socket() as sock:
++        sock.bind(("127.0.0.1", 0))
++        port = sock.getsockname()[1]
++    run = root / "service-run"
++    run.mkdir()
++    # An old pidfile must never make the helper signal an unrelated process.
++    other = subprocess.Popen(["sleep", "60"])
++    (run / "pid").write_text(str(other.pid))
++    env = dict(os.environ, YAM_ROOT=str(yam), YAM_RUN=str(root / "new-yam-run"),
++               LUNA_RUN=str(run), LUNA_LISTEN=f"127.0.0.1:{port}")
++
++    def service(action, check=True):
++        result = subprocess.run([str(helper), action], env=env, check=False,
++                                capture_output=True, text=True, timeout=30)
++        if check and result.returncode:
++            raise AssertionError(f"{action} failed: {result.stdout}{result.stderr}")
++        return result
++
++    try:
++        assert service("status", check=False).returncode != 0
++        service("start")
++        service("status")
++        assert (root / "new-yam-run/yam.lock").exists()
++        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/settings", timeout=3) as reply:
++            assert not json.load(reply)["updates"]["enabled"]
++        before = (run / "pid").read_text()
++        service("start")
++        assert before == (run / "pid").read_text(), "duplicate daemon"
++        service("stop")
++        assert service("status", check=False).returncode != 0
++        lock = root / "new-yam-run/yam.lock"
++        lock.write_bytes(b"existing-lock")
++        service("start")
++        assert lock.read_bytes() == b"existing-lock", "existing lock was truncated"
++        service("stop")
++        assert other.poll() is None, "stale pidfile killed an unrelated process"
++        print("PASS: fresh boot directory, readiness, idempotent start, stop, stale PID safety")
++    finally:
++        service("stop", check=False)
++        other.terminate()
++        other.wait(timeout=3)
+diff --git a/tools/luna-service b/tools/luna-service
+new file mode 100755
+index 0000000..3e8e256
+--- /dev/null
++++ b/tools/luna-service
+@@ -0,0 +1,68 @@
++#!/bin/sh
++# Luna lifecycle for YAM installations on BusyBox init.
++set -eu
++ROOT=${YAM_ROOT:-/data/yam}
++STATE=$ROOT/var/yam.luna
++RUN=${LUNA_RUN:-/tmp/luna}
++YAM_RUN=${YAM_RUN:-/tmp/yam}
++LUNA_LISTEN=${LUNA_LISTEN:-127.0.0.1:8099}
++HOOK=/etc/init.d/S99zluna
++umask 077
++mkdir -p "$RUN" "$STATE" "$YAM_RUN"
++alive() {
++    [ -f "$RUN/pid" ] || return 1
++    pid=$(cat "$RUN/pid")
++    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
++    kill -0 "$pid" 2>/dev/null || return 1
++    [ "$(readlink "/proc/$pid/exe")" = "$(readlink -f "$ROOT/bin/luna")" ]
++}
++case "${1:-status}" in
++    run)
++        export YAM_ROOT="$ROOT" YAM_VAR="$ROOT/var"
++        exec "$ROOT/bin/luna" --data-dir "$STATE" --yam-root "$ROOT" --yam-run "$YAM_RUN" --listen "$LUNA_LISTEN"
++        ;;
++    start)
++        alive && exit 0
++        rm -f "$RUN/pid"
++        nohup "$0" run >"$RUN/runtime.log" 2>&1 </dev/null &
++        echo "$!" >"$RUN/pid"
++        sleep 1
++        alive || { cat "$RUN/runtime.log" >&2; rm -f "$RUN/pid"; exit 1; }
++        ;;
++    stop)
++        if alive; then
++            kill "$pid"
++            count=0
++            while alive; do
++                count=$((count+1))
++                [ "$count" -lt 24 ] || { echo 'Luna has not finished package cleanup' >&2; exit 1; }
++                sleep 1
++            done
++        fi
++        rm -f "$RUN/pid"
++        ;;
++    restart) "$0" stop; "$0" start ;;
++    status) alive && echo "Luna running (PID $pid)" ;;
++    install|uninstall)
++        action=$1
++        if [ -f "$HOOK" ] && ! grep -q '^# Managed by Luna YAM service$' "$HOOK"; then
++            echo "Refusing unmanaged $HOOK" >&2; exit 1
++        fi
++        mount -o remount,rw /
++        trap 'mount -o remount,ro /' EXIT
++        if [ "$action" = uninstall ]; then
++            "$0" stop
++            rm -f "$HOOK"
++        else
++            cat >"$HOOK" <<'EOF'
++#!/bin/sh
++# Managed by Luna YAM service
++export YAM_ROOT=/data/yam
++[ -x "$YAM_ROOT/bin/luna-service" ] || exit 0
++exec "$YAM_ROOT/bin/luna-service" "${1:-start}"
++EOF
++            chmod 755 "$HOOK"
++        fi
++        ;;
++    *) echo 'luna-service install|uninstall|start|stop|restart|status|run' >&2; exit 2 ;;
++esac
+diff --git a/tools/package-station.sh b/tools/package-station.sh
+new file mode 100755
+index 0000000..2fbe36a
+--- /dev/null
++++ b/tools/package-station.sh
+@@ -0,0 +1,37 @@
++#!/bin/sh
++# Pack one already-built station binary with the official YAM packer.
++set -eu
++repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
++model=${1:?Usage: package-station.sh MODEL OUTPUT.yampkg}
++output=${2:?Usage: package-station.sh MODEL OUTPUT.yampkg}
++case "$model" in
++    yandexmini) triple=armv7-unknown-linux-musleabihf ;;
++    yandexmicro|yandexmini_2|yandexmini3|yandexmidi|yandexplum|yandexstation_2)
++        triple=aarch64-unknown-linux-musl ;;
++    *) echo 'Unknown station model' >&2; exit 2 ;;
++esac
++binary=$repo/target/$triple/release/luna-$model
++[ -f "$binary" ] || { echo "Build $binary first" >&2; exit 1; }
++version=$(awk '$1 == "version:" { print $2; exit }' "$repo/yam.yaml")
++stage=$(mktemp -d)
++trap 'rm -rf "$stage"' EXIT HUP INT TERM
++cp "$binary" "$stage/luna"
++cp "$repo/tools/luna-service" "$stage/luna-service"
++cat >"$stage/yam.yaml" <<EOF
++name: yam/luna
++version: $version
++license: MIT
++description: Luna integration build with YAM binary providers
++targets: [$model]
++files:
++  bin/luna: luna
++  bin/luna-service: luna-service
++services:
++  luna:
++    exec: [bin/luna-service, run]
++    restart: always
++    after: [network]
++EOF
++set -- --platform "$model"
++if [ -n "${YAM_PROFILES:-}" ]; then set -- "$@" --profiles "$YAM_PROFILES"; fi
++"${YAM_BIN:-yam}" "$@" pack "$stage" --output "$output"
+diff --git a/yam.yaml b/yam.yaml
+index c46157a..61f6e17 100644
+--- a/yam.yaml
++++ b/yam.yaml
+@@ -5,6 +5,7 @@ description: Luna host runtime for Lua, Quasar and legacy plugins
+ targets: [yandexmini, yandexmicro, yandexmini_2, yandexmini3, yandexmidi, yandexplum, yandexstation_2]
+ files:
+   bin/luna: target/$YAM_TRIPLE/release/luna
++  bin/luna-service: tools/luna-service
+   bin/luna-universal: target/$YAM_TRIPLE/release/luna-universal
+   bin/luna-yandexmini: target/$YAM_TRIPLE/release/luna-yandexmini
+   bin/luna-yandexmicro: target/$YAM_TRIPLE/release/luna-yandexmicro

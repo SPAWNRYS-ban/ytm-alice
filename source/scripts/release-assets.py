@@ -13,14 +13,21 @@ root = Path(__file__).resolve().parents[1]
 repository = root.parent
 parser = argparse.ArgumentParser()
 parser.add_argument('packages', nargs='+', type=Path)
+parser.add_argument('--luna-source', required=True, type=Path)
 args = parser.parse_args()
 packages = sorted(path.resolve() for path in args.packages)
 out = packages[0].parent
 version = subprocess.check_output(['python3', str(root/'scripts/check-version.py')], text=True).strip()
 expected = {f'ytm-alice-{version}-{platform}.yampkg' for platform in ('yandexmicro','yandexmini_2')}
-if (len(packages) != len(set(packages)) or any(path.parent != out or path.name not in expected
+if (len(packages) != len(set(packages)) or {path.name for path in packages} != expected or any(path.parent != out or path.name not in expected
                                             or not path.is_file() for path in packages)):
     parser.error('Expected current-version Station packages in the same output directory')
+luna_packages = [out/f'luna-0.2.7-ytm-{model}.yampkg' for model in ('yandexmicro', 'yandexmini_2')]
+if not all(path.is_file() for path in luna_packages):
+    parser.error('Build both patched Luna packages first')
+luna_source = args.luna_source.resolve()
+if not (luna_source/'tools/luna-service').is_file():
+    parser.error('--luna-source must name the patched Luna checkout')
 
 def tar_gz(path, entries):
     with path.open('wb') as destination, gzip.GzipFile(filename='', mode='wb', fileobj=destination, mtime=0) as compressed:
@@ -34,9 +41,10 @@ def tar_gz(path, entries):
 
 shutil.copyfile(root/'remote-cli.py', out/'ytm-alice-cli.py')
 shutil.copyfile(root/'install-client.sh', out/'install-client.sh')
-entries = [('ytm-alice-station/'+package.name, package) for package in packages]
+entries = [('ytm-alice-station/'+package.name, package) for package in packages+luna_packages]
 for name, path in [('install.py', root/'install.py'),
                    ('README.md', repository/'README.md'),
+                   ('LUNA.md', repository/'docs/LUNA.md'),
                    ('LICENSE', repository/'licenses/LICENSE'),
                    ('THIRD_PARTY_NOTICES.md', repository/'docs/THIRD_PARTY_NOTICES.md'),
                    ('media/UPSTREAM-LICENSE', repository/'licenses/media/UPSTREAM-LICENSE')]:
@@ -45,7 +53,10 @@ tar_gz(out/'ytm-alice-station.tar.gz', entries)
 tracked = subprocess.check_output(['git','ls-files','-z'], cwd=repository).decode().split('\0')
 tar_gz(out/('ytm-alice-'+version+'-source.tar.gz'), [
     ('ytm-alice-'+version+'/'+name, repository/name) for name in tracked if name])
-assets = packages+[out/'ytm-alice-cli.py', out/'install-client.sh', out/'ytm-alice-station.tar.gz',
+luna_tracked = subprocess.check_output(['git','ls-files','-z'], cwd=luna_source).decode().split('\0')
+luna_archive = out/'luna-0.2.7-ytm-source.tar.gz'
+tar_gz(luna_archive, [('luna-0.2.7-ytm/'+name, luna_source/name) for name in luna_tracked if name])
+assets = packages+luna_packages+[luna_archive, out/'ytm-alice-cli.py', out/'install-client.sh', out/'ytm-alice-station.tar.gz',
           out/('ytm-alice-'+version+'-source.tar.gz')]
 assets += [path.with_suffix('.yampkg.sha256') for path in packages if path.with_suffix('.yampkg.sha256').is_file()]
 (out/'SHA256SUMS').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name+'\n'

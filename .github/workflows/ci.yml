@@ -96,7 +96,7 @@ jobs:
       - name: Validate release source
         run: |
           python3 scripts/check-version.py
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
+          if [ "$GITHUB_REF_TYPE" = tag ] && [[ "$GITHUB_REF_NAME" != *-* ]]; then
             git merge-base --is-ancestor HEAD origin/main
           fi
       - name: Build Go service
@@ -114,6 +114,9 @@ jobs:
           git clone https://github.com/nyakokitsu/yam.git ../.build/yam
           git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
           cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
+      - name: Build and test pinned Luna integration
+        run: |
+          python3 scripts/build-luna.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
       - name: Pack and verify installation lifecycle
         run: |
           version=$(python3 scripts/check-version.py)
@@ -121,7 +124,7 @@ jobs:
             python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
             python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-$version-$platform.yampkg"
           done
-          python3 scripts/release-assets.py ../release/*.yampkg
+          python3 scripts/release-assets.py --luna-source ../.build/luna-integration/source ../release/ytm-alice-*.yampkg
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate
@@ -151,4 +154,8 @@ jobs:
         run: |
           cd release
           sha256sum -c SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../docs/RELEASE.md --latest
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v} — экспериментальная сборка" --notes-file ../docs/RELEASE.md --prerelease --latest=false
+          else
+            gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../docs/RELEASE.md --latest
+          fi

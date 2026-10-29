@@ -33,6 +33,9 @@ func bundledMedia(action string) error {
 }
 
 func daemon(action string) error {
+	if lunaPackageInstalled() {
+		return lunaDaemon(action)
+	}
 	switch action {
 	case "start":
 		if _, e := call(request{Action: "status"}); e == nil {

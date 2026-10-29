@@ -26,14 +26,30 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     environment = {key:value for key,value in os.environ.items() if key not in ('YAM_ROOT','YAM_PLATFORM','YAM_PROFILES')}
     def invoke(*arguments):
         return subprocess.check_output(prefix+list(map(str, arguments)), env=environment, text=True)
+    # This fixture checks package transactions only. Runtime compatibility is
+    # covered by the Luna integration tests, not by a fake daemon here.
+    dependency = temporary/'luna-dependency'
+    dependency.mkdir()
+    (dependency/'luna').write_text('#!/bin/sh\nexit 0\n')
+    (dependency/'luna').chmod(0o755)
+    (dependency/'yam.yaml').write_text('name: yam/luna\nversion: 0.2.7\nlicense: MIT\n'
+        'description: Package transaction dependency fixture\ntargets: ['+args.platform+']\n'
+        'files:\n  bin/luna: luna\n')
+    host_package = temporary/'luna.yampkg'
+    invoke('pack', dependency, '--output', host_package)
+    invoke('install', '--yes', host_package)
+    def installed():
+        return [line.split() for line in invoke('list').splitlines()]
     invoke('install', '--yes', package)
-    assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
+    assert ['local/ytm-alice',version,args.platform] in installed()
     root = temporary/'root'
     for binary in ('ytm-alice','ytm-alice-player','alice-media','bt-proxy'):
         link = root/'bin'/binary
         assert link.is_symlink() and link.resolve().is_file() and os.access(link, os.X_OK), binary
     for name in ('LICENSE','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE','media/upstream/src/main.rs'):
         assert (root/'share/local.ytm-alice'/name).is_file(), name
+    plugin = root/'share/luna/plugins/local.ytm-alice'
+    assert (plugin/'plugin.toml').is_file() and (plugin/'run.sh').is_file()
     forbidden = {'youtube-session.json','state.json','id_ed25519','cookies.sqlite','target','.git'}
     assert not any(path.name in forbidden for path in (root/'pkgs').rglob('*'))
     data = root/'var/local.ytm-alice'
@@ -42,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     session.write_text('{"fixture":"session-preservation"}')
     session.chmod(0o600)
     invoke('remove', 'local/ytm-alice')
-    assert not invoke('list').strip()
+    assert installed() == [['yam/luna','0.2.7',args.platform]]
     assert not (root/'bin/bt-proxy').exists()
     # Synthetic old packages exercise the real conflicts/replaces upgrade path.
     for name, binaries in [('ytm-alice', ('ytm-alice','ytm-alice-player')),
@@ -59,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
         invoke('pack', source, '--output', artifact)
         invoke('install', '--yes', artifact)
     invoke('install', '--yes', package)
-    assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
+    assert ['local/ytm-alice',version,args.platform] in installed()
     assert not (root/'pkgs/local/alice-media').exists()
     assert session.read_text() == '{"fixture":"session-preservation"}'
     assert session.stat().st_mode & 0o777 == 0o600

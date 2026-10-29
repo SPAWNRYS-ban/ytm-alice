@@ -29,7 +29,7 @@ for package in sorted(metadata['packages'], key=lambda item:(item['name'],item['
     folder = destination/name
     folder.mkdir(exist_ok=True)
     for path in set(files):
-        shutil.copyfile(path, folder/path.name)
+        (folder/path.name).write_bytes(path.read_bytes().replace(b'\r\n', b'\n'))
     lines.append('- '+name+' — '+str(package.get('license') or package.get('license_file')))
 (destination/'README.md').write_text('\n'.join(lines)+'\n')
 print('Collected notices for', len(lines)-4, 'Rust dependencies')

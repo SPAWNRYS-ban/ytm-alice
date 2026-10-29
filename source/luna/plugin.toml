@@ -1,0 +1,16 @@
+id = "local.ytm-alice"
+name = "YouTube Music"
+version = "0.8.0-luna.1"
+entry = "run.sh"
+description = "YouTube Music: voice, web panel and CLI"
+permissions = ["exec", "media.provider"]
+
+[launch]
+kind = "binary"
+mode = "service"
+path = "run.sh"
+interpreter = "sh"
+
+[media_provider]
+label = "YouTube Music"
+actions = ["pause", "resume", "next", "previous"]
