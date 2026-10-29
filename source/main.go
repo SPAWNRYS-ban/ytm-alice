@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-const version = "0.7.1"
+const version = "0.7.2-hotfix"
 const relayAddr = "127.0.0.1:18883"
 
 func dataDir() string {

@@ -3,11 +3,10 @@
 import argparse
 import hashlib
 from pathlib import Path
-import re
 import subprocess
 
 root = Path(__file__).resolve().parent
-version = re.search(r'^version: (\d+\.\d+\.\d+)$', (root/'yam.yaml').read_text(), re.M)[1]
+version = subprocess.check_output(['python3', str(root/'scripts/check-version.py')], text=True).strip()
 p = argparse.ArgumentParser()
 p.add_argument('--yam', default='yam', help='YAM v2 executable')
 p.add_argument('--runner', help='Optional emulator for an aarch64 YAM on x86_64')
