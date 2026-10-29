@@ -22,12 +22,14 @@ cargo test --locked --manifest-path media/upstream/Cargo.toml
 ## Сборка
 
 > [!WARNING]
-> Тестирование проводилось только на **Яндекс Станции Лайт 1 (YNDX-00025)**.
-> Работа на других моделях пока не проверена.
+> Проверено на **Яндекс Станции Лайт 1 (YNDX-00025, `yandexmicro`)**.
+> На **Яндекс Станции Мини 2 с часами (`yandexmini_2`)** подтверждены установка,
+> запуск и воспроизведение. Работа на остальных моделях пока не проверена.
 
-Текущий релиз собирается для платформы `yandexmicro`; она указана в
-`source/yam.yaml` и `source/package.py`. Расширение списка платформ требует
-проверки библиотек прошивки и медиаслоя на соответствующих устройствах.
+В `source/yam.yaml` указаны платформы `yandexmicro` (Лайт 1) и
+`yandexmini_2` (Мини 2 с часами). Скрипт `source/package.py` и CI по умолчанию
+собирают пакет для `yandexmicro`. Для других моделей требуется проверка
+библиотек прошивки и медиаслоя на соответствующих устройствах.
 
 Linux x86_64, Docker, Rust с rustup и Go. Станция и библиотеки прошивки для
 сборки не нужны. Нативный плеер использует открытые заголовки GStreamer 1.x
@@ -46,6 +48,16 @@ python3 package.py --yam ../.build/yam/target/release/yam --profiles ../.build/y
 python3 scripts/check-package.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms ../release/*.yampkg
 python3 scripts/release-assets.py ../release/*.yampkg
 ```
+
+После сборки бинарников и упаковщика пакет для Мини 2 с часами можно собрать
+напрямую через YAM (из каталога `source/`):
+
+```sh
+../.build/yam/target/release/yam --platform yandexmini_2 --profiles ../.build/yam/platforms pack . --output ../release/ytm-alice-0.7.0-yandexmini_2.yampkg
+```
+
+`source/scripts/check-package.py` пока проверяет только пакеты `yandexmicro`;
+для проверки пакета Мини 2 нужен профиль `yandexmini_2`.
 
 Артефакты — в `release/` в корне репозитория. `yam.yaml` берёт README из корня, документацию из `docs/` и лицензии
 из `licenses/`; исходный архив сохраняет структуру репозитория с каталогом `source/`.
