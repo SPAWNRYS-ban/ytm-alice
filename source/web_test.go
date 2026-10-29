@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -76,6 +77,50 @@ func TestWebRejectsForeignSitesAndArbitraryCommands(t *testing.T) {
 	p.ServeHTTP(out, req)
 	if out.Code != 403 {
 		t.Fatal("simple cross-site form request accepted")
+	}
+}
+func TestWebFollowsConnectionAddressChangesWithoutRestart(t *testing.T) {
+	t.Setenv("YTM_ALICE_DATA", t.TempDir())
+	p := panelFixture()
+	for _, host := range []string{"192.168.50.151", "192.168.50.152:80", "[fd42::1234]", "[::ffff:192.168.50.152]:80"} {
+		ip := net.ParseIP(hostName(host))
+		for _, method := range []string{"GET", "POST"} {
+			path, body := "/api/state", ""
+			if method == "POST" {
+				path, body = "/api/command", `{"action":"announce-off"}`
+			}
+			req := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
+			req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: ip, Port: 80}))
+			req.Header.Set("Origin", "http://"+host)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Ytm-Client", "web")
+			out := httptest.NewRecorder()
+			p.ServeHTTP(out, req)
+			if out.Code != http.StatusOK {
+				t.Fatalf("current connection address rejected after network change: %s %s: %d", method, host, out.Code)
+			}
+		}
+	}
+}
+func TestWebNewConnectionAddressStillRejectsUnrelatedHostsAndOrigins(t *testing.T) {
+	p := panelFixture()
+	for _, host := range []string{"evil.invalid", "198.51.100.234"} {
+		req := httptest.NewRequest("GET", "http://"+host+"/api/state", nil)
+		req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("192.168.50.152"), Port: 80}))
+		out := httptest.NewRecorder()
+		p.ServeHTTP(out, req)
+		if out.Code != http.StatusForbidden {
+			t.Fatalf("unrelated Host accepted: %s", host)
+		}
+	}
+	req := httptest.NewRequest("POST", "http://192.168.50.152/api/command", strings.NewReader(`{"action":"stop"}`))
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("192.168.50.152"), Port: 80}))
+	req.Header.Set("Origin", "http://evil.invalid")
+	req.Header.Set("X-Ytm-Client", "web")
+	out := httptest.NewRecorder()
+	p.ServeHTTP(out, req)
+	if out.Code != http.StatusForbidden {
+		t.Fatal("foreign origin accepted after network change")
 	}
 }
 func TestWebCookieImportAcceptsLANHTTPAndKeepsPreviousSessionOnFailure(t *testing.T) {

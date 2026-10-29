@@ -45,21 +45,40 @@ func webCLI(action string) error {
 
 type webPanel struct {
 	server *Server
-	hosts  map[string]bool
 }
 
 func newWebPanel(s *Server) *webPanel {
-	hosts := map[string]bool{"alice.lan": true, "alice.local": true, "localhost": true}
-	for _, ip := range localAddresses() {
-		hosts[ip.String()] = true
-	}
-	return &webPanel{server: s, hosts: hosts}
+	return &webPanel{server: s}
 }
 func hostName(hostport string) string {
 	if host, _, err := net.SplitHostPort(hostport); err == nil {
 		return strings.ToLower(host)
 	}
 	return strings.ToLower(strings.Trim(hostport, "[]"))
+}
+func (p *webPanel) hostOK(r *http.Request) bool {
+	host := hostName(r.Host)
+	switch host {
+	case "alice.lan", "alice.local", "localhost":
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	// The accepted connection carries the current destination address even
+	// when DHCP completed after startup or the network address has changed.
+	if local, ok := r.Context().Value(http.LocalAddrContextKey).(*net.TCPAddr); ok && local.IP.Equal(ip) {
+		return true
+	}
+	// Also allow another currently assigned interface address (for example
+	// when a local reverse proxy preserves the original numeric Host).
+	for _, local := range localAddresses() {
+		if local.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 func (p *webPanel) originOK(r *http.Request) bool {
 	scheme := "http"
@@ -96,7 +115,7 @@ func (p *webPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://*.ytimg.com https://*.googleusercontent.com https://*.ggpht.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 	w.Header().Set("Cache-Control", "no-store")
-	if !p.hosts[hostName(r.Host)] {
+	if !p.hostOK(r) {
 		webError(w, 403, "неизвестный адрес колонки")
 		return
 	}
