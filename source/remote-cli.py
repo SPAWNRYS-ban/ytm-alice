@@ -25,7 +25,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 REMOTE = '/data/yam/bin/ytm-alice'
 STATES = {'playing': 'Играет', 'paused': 'Пауза', 'stopped': 'Остановлено',
           'searching': 'Поиск', 'buffering': 'Подготовка', 'error': 'Ошибка'}

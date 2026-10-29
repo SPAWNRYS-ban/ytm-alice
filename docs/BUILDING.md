@@ -27,8 +27,8 @@ cargo test --locked --manifest-path media/upstream/Cargo.toml
 > запуск и воспроизведение. Работа на остальных моделях пока не проверена.
 
 В `source/yam.yaml` указаны платформы `yandexmicro` (Лайт 1) и
-`yandexmini_2` (Мини 2 с часами). Скрипт `source/package.py` и CI по умолчанию
-собирают пакет для `yandexmicro`. Для других моделей требуется проверка
+`yandexmini_2` (Мини 2 с часами). CI собирает и проверяет пакеты для обеих
+платформ. Для других моделей требуется проверка
 библиотек прошивки и медиаслоя на соответствующих устройствах.
 
 Linux x86_64, Docker, Rust с rustup и Go. Станция и библиотеки прошивки для
@@ -44,20 +44,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dis
 git clone https://github.com/nyakokitsu/yam.git ../.build/yam
 git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
 cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
-python3 package.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
-python3 scripts/check-package.py --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms ../release/*.yampkg
+for platform in yandexmicro yandexmini_2; do
+  python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
+  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.1-$platform.yampkg"
+done
 python3 scripts/release-assets.py ../release/*.yampkg
 ```
-
-После сборки бинарников и упаковщика пакет для Мини 2 с часами можно собрать
-напрямую через YAM (из каталога `source/`):
-
-```sh
-../.build/yam/target/release/yam --platform yandexmini_2 --profiles ../.build/yam/platforms pack . --output ../release/ytm-alice-0.7.0-yandexmini_2.yampkg
-```
-
-`source/scripts/check-package.py` пока проверяет только пакеты `yandexmicro`;
-для проверки пакета Мини 2 нужен профиль `yandexmini_2`.
 
 Артефакты — в `release/` в корне репозитория. `yam.yaml` берёт README из корня, документацию из `docs/` и лицензии
 из `licenses/`; исходный архив сохраняет структуру репозитория с каталогом `source/`.
@@ -67,7 +59,7 @@ python3 scripts/release-assets.py ../release/*.yampkg
 ## Релиз
 
 Обновите версии в `source/main.go`, `source/remote-cli.py`, `source/yam.yaml`,
-`source/package.py` и заметки `docs/RELEASE.md`. Отправьте тег `vX.Y.Z`
+README, примерах установки и заметках `docs/RELEASE.md`. Отправьте тег `vX.Y.Z`
 на коммит из `main`. CI проверит версии, выполнит тесты Linux/macOS,
 соберёт пакет и опубликует GitHub Release с SHA-256.
 

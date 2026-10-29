@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('package', type=Path)
 parser.add_argument('--yam', required=True)
 parser.add_argument('--runner')
+parser.add_argument('--platform', choices=('yandexmicro', 'yandexmini_2'), default='yandexmicro')
 parser.add_argument('--profiles', required=True, type=Path)
 args = parser.parse_args()
 package = args.package.resolve()
@@ -18,15 +19,15 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     temporary = Path(directory)
     profiles = temporary/'profiles'
     profiles.mkdir()
-    profile = (args.profiles/'yandexmicro.yaml').read_text()
+    profile = (args.profiles/(args.platform+'.yaml')).read_text()
     profile = profile.replace('/data/yam', str(temporary/'default')).replace('/tmp/yam', str(temporary/'run'))
-    (profiles/'yandexmicro.yaml').write_text(profile)
-    prefix = ([args.runner] if args.runner else [])+[args.yam, '--platform', 'yandexmicro', '--profiles', str(profiles), '--root', str(temporary/'root')]
+    (profiles/(args.platform+'.yaml')).write_text(profile)
+    prefix = ([args.runner] if args.runner else [])+[args.yam, '--platform', args.platform, '--profiles', str(profiles), '--root', str(temporary/'root')]
     environment = {key:value for key,value in os.environ.items() if key not in ('YAM_ROOT','YAM_PLATFORM','YAM_PROFILES')}
     def invoke(*arguments):
         return subprocess.check_output(prefix+list(map(str, arguments)), env=environment, text=True)
     invoke('install', '--yes', package)
-    assert invoke('list').split() == ['local/ytm-alice',version,'yandexmicro']
+    assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
     root = temporary/'root'
     for binary in ('ytm-alice','ytm-alice-player','alice-media','bt-proxy'):
         link = root/'bin'/binary
@@ -52,15 +53,15 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
         program.write_text('#!/bin/sh\nexit 0\n')
         program.chmod(0o755)
         (source/'yam.yaml').write_text('name: local/'+name+'\nversion: 0.0.1\nlicense: MIT\n'
-            'description: Upgrade fixture\ntargets: [yandexmicro]\nfiles:\n'+
+            'description: Upgrade fixture\ntargets: ['+args.platform+']\nfiles:\n'+
             ''.join('  bin/'+binary+': program\n' for binary in binaries))
         artifact = temporary/(name+'.yampkg')
         invoke('pack', source, '--output', artifact)
         invoke('install', '--yes', artifact)
     invoke('install', '--yes', package)
-    assert invoke('list').split() == ['local/ytm-alice',version,'yandexmicro']
+    assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
     assert not (root/'pkgs/local/alice-media').exists()
     assert session.read_text() == '{"fixture":"session-preservation"}'
     assert session.stat().st_mode & 0o777 == 0o600
     invoke('doctor')
-    print('Package: four executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')
+    print(args.platform+': four executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')
