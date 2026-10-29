@@ -17,8 +17,8 @@
 Для `yandexmini_2` собираются оба пакета; на устройстве эта версия пока не проверена.
 
 Сначала установите `luna-0.2.7-ytm-<модель>.yampkg`, выполните
-`luna-service install` и `luna-service start`, затем установите
-`ytm-alice-0.8.0-luna.1-<модель>.yampkg` и выполните `ytm-alice daemon install`.
+`/data/yam/bin/luna-service install` и `/data/yam/bin/luna-service start`, затем установите
+`ytm-alice-0.8.0-luna.1-<модель>.yampkg` и выполните `/data/yam/bin/ytm-alice daemon install`.
 Перед заменой работающих пакетов остановите сервисы; резервные копии храните
 на компьютере. Сессия и очередь остаются в `var`.
 

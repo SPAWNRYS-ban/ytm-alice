@@ -155,7 +155,7 @@ jobs:
           cd release
           sha256sum -c SHA256SUMS
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v} — экспериментальная сборка" --notes-file ../docs/RELEASE.md --prerelease --latest=false
+            gh release create "$GITHUB_REF_NAME" ./* --verify-tag --target "$GITHUB_SHA" --title "ytm-alice ${GITHUB_REF_NAME#v} — экспериментальная сборка" --notes-file ../docs/RELEASE.md --prerelease --latest=false
           else
             gh release create "$GITHUB_REF_NAME" ./* --verify-tag --title "ytm-alice ${GITHUB_REF_NAME#v}" --notes-file ../docs/RELEASE.md --latest
           fi

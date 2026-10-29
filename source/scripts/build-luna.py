@@ -5,13 +5,14 @@ import hashlib
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import tarfile
 import urllib.request
 
 UPSTREAM = 'https://github.com/nyakokitsu/luna.git'
 COMMIT = '4f769b5f184c3f83e50d7c22b16f90d6a392b602'
-TOOLCHAIN = 'https://musl.cc/aarch64-linux-musl-cross.tgz'
+TOOLCHAIN = 'https://github.com/musl-cc/musl.cc/releases/download/v0.0.1/aarch64-linux-musl-cross.tgz'
 TOOLCHAIN_SHA256 = 'c909817856d6ceda86aa510894fa3527eac7989f0ef6e87b5721c58737a06c38'
 repository = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -48,7 +49,8 @@ if args.toolchain_dir:
     toolchain = args.toolchain_dir.resolve()
 else:
     archive = work/'aarch64-linux-musl-cross.tgz'
-    urllib.request.urlretrieve(TOOLCHAIN, archive)
+    with urllib.request.urlopen(TOOLCHAIN, timeout=30) as remote, archive.open('wb') as destination:
+        shutil.copyfileobj(remote, destination)
     if hashlib.sha256(archive.read_bytes()).hexdigest() != TOOLCHAIN_SHA256:
         raise SystemExit('musl toolchain SHA-256 mismatch')
     def archive_filter(member, destination):
