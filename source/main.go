@@ -81,6 +81,7 @@ type nativePlayer struct {
 	token   string
 	source  streamInfo
 	attempt int
+	window  *seekWindow // set when playback starts mid-track
 }
 
 func (p *nativePlayer) send(line string) {
@@ -282,8 +283,15 @@ func (s *Server) command(ctx context.Context, r request) response {
 			s.state.PositionMS = 0
 			s.state.Error = ""
 		case "seek":
+			if len(s.state.Queue) == 0 {
+				s.mu.Unlock()
+				return response{Error: "плеер не запущен"}
+			}
+			// Restart the track from the fragment that contains the position (see seek.go).
 			s.mu.Unlock()
-			return response{Error: "Штатный плеер этой прошивки не поддерживает надёжную перемотку"}
+			s.start(max(r.PositionMS, 0), false)
+			v := s.snapshot()
+			return response{State: &v}
 		case "next", "previous":
 			step := 1
 			if r.Action == "previous" {
@@ -399,6 +407,14 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			close(speechDone)
 		}
 		src, err := s.catalog.resolve(ctx, t.ID)
+		var win *seekWindow
+		if err == nil && offset > 0 {
+			var werr error
+			if win, werr = s.catalog.seekWindow(ctx, src, offset); werr != nil {
+				log.Printf("seek window %s: %v; falling back to player seek", t.ID, werr)
+				win = nil
+			}
+		}
 		select {
 		case <-speechDone:
 		case <-ctx.Done():
@@ -439,7 +455,10 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 		} else {
 			cmd.Stderr = io.Discard
 		}
-		p := &nativePlayer{cmd: cmd, in: in, token: token, source: src, attempt: attempt}
+		p := &nativePlayer{cmd: cmd, in: in, token: token, source: src, attempt: attempt, window: win}
+		if win != nil {
+			s.state.PositionMS = win.startMS
+		}
 		s.player = p
 		if e = cmd.Start(); e != nil {
 			s.player = nil
@@ -458,7 +477,7 @@ func (s *Server) failLocked(message string) {
 func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset int64) {
 	scanner := bufio.NewScanner(out)
 	natural := false
-	seeked := offset == 0
+	seeked := offset == 0 || p.window != nil
 	for scanner.Scan() {
 		var ev struct {
 			Event      string `json:"event"`
@@ -486,6 +505,10 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset in
 			}
 		case "position":
 			s.state.PositionMS = ev.PositionMS
+			// The demuxer may count time from the first served fragment.
+			if p.window != nil && ev.PositionMS+2000 < p.window.startMS {
+				s.state.PositionMS = p.window.startMS + ev.PositionMS
+			}
 		case "eos":
 			natural = true
 		case "error":
@@ -544,7 +567,19 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := p.source
+	win := p.window
 	s.mu.Unlock()
+	if win != nil {
+		if r.Method == "HEAD" {
+			w.Header().Set("Content-Type", src.mime)
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Length", strconv.FormatInt(win.length(src), 10))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		s.relayWindow(w, r, p, src, win)
+		return
+	}
 	if r.Method == "HEAD" {
 		w.Header().Set("Content-Type", src.mime)
 		w.Header().Set("Accept-Ranges", "bytes")

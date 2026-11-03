@@ -90,6 +90,12 @@ func waitStreamRetry(ctx context.Context, attempt int) bool {
 }
 
 func (s *Server) relayAudio(w http.ResponseWriter, r *http.Request, p *nativePlayer, src streamInfo, start, end int64) {
+	s.relayAudioRange(w, r, p, src, start, end, false)
+}
+
+// relayAudioRange copies [start, end] of the CDN stream; headersSent means the
+// caller has already written the response status and headers.
+func (s *Server) relayAudioRange(w http.ResponseWriter, r *http.Request, p *nativePlayer, src streamInfo, start, end int64, headersSent bool) {
 	client := *s.catalog.http
 	client.Timeout = 0 // A paused reader must not expire the upstream body.
 	if transport, ok := client.Transport.(*http.Transport); ok {
@@ -100,7 +106,7 @@ func (s *Server) relayAudio(w http.ResponseWriter, r *http.Request, p *nativePla
 		client.Transport = copy
 		defer copy.CloseIdleConnections()
 	}
-	first := true
+	first := !headersSent
 	fail := func() {
 		if first {
 			w.WriteHeader(http.StatusBadGateway)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	yt "github.com/kkdai/youtube/v2"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -89,6 +90,14 @@ type Catalog struct {
 	authEpoch     atomic.Uint64
 	authResult    AuthStatus
 	authCheckedAt time.Time
+	// YouTube answers 429 to a rate-limited IP; back off instead of retrying.
+	limitMu      sync.Mutex
+	limitedUntil time.Time
+	limitBackoff time.Duration
+	// One library client for all tracks so its visitor id and player JS caches work.
+	ytMu      sync.Mutex
+	ytClient  *yt.Client
+	ytCreated time.Time
 }
 type catalogEntry struct {
 	tracks []Track
@@ -99,6 +108,8 @@ type streamInfo struct {
 	length    int64
 	until     time.Time
 	id        string
+	// Byte ranges of the fragmented MP4 init segment and sidx index, if known.
+	initEnd, indexStart, indexEnd int64
 }
 
 var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
@@ -330,7 +341,11 @@ func (c *Catalog) lookup(ctx context.Context, q string) ([]Track, error) {
 			if !videoID.MatchString(id) {
 				return nil, errors.New("неверный ID трека")
 			}
-			v, e := (&yt.Client{HTTPClient: c.http, MaxRoutines: 1}).GetVideoContext(ctx, id)
+			var v *yt.Video
+			e := c.withYT(func(client *yt.Client) (err error) {
+				v, err = c.videoInfo(ctx, client, id)
+				return err
+			})
 			err = e
 			if e == nil {
 				tracks = []Track{{ID: id, Title: v.Title, Artists: v.Author, DurationMS: v.Duration.Milliseconds(), ThumbnailURL: fallbackThumbnail(id)}}
@@ -425,6 +440,43 @@ func (c *Catalog) radio(ctx context.Context, id string) []Track {
 	}
 	return parseTracks(d)
 }
+
+// rateLimited explains a 429 from YouTube: the whole IP is limited, not the track.
+type rateLimited struct{ until time.Time }
+
+func (e rateLimited) Error() string {
+	// The Station often has no time zone configured, so show a relative delay.
+	minutes := int(time.Until(e.until).Minutes()) + 1
+	return fmt.Sprintf("YouTube временно ограничил запросы с этого IP (429); повторите через %d мин", minutes)
+}
+
+func rateLimitError(until time.Time) error { return rateLimited{until} }
+
+// videoInfo fetches player data, backing off for the whole client after a 429.
+func (c *Catalog) videoInfo(ctx context.Context, client *yt.Client, id string) (*yt.Video, error) {
+	c.limitMu.Lock()
+	until := c.limitedUntil
+	c.limitMu.Unlock()
+	if time.Now().Before(until) {
+		return nil, rateLimitError(until)
+	}
+	v, err := client.GetVideoContext(ctx, id)
+	c.limitMu.Lock()
+	defer c.limitMu.Unlock()
+	if err != nil {
+		log.Printf("video %s: %v", id, err)
+		var status yt.ErrUnexpectedStatusCode
+		if errors.As(err, &status) && status == http.StatusTooManyRequests {
+			c.limitBackoff = min(max(2*c.limitBackoff, 2*time.Minute), 30*time.Minute)
+			c.limitedUntil = time.Now().Add(c.limitBackoff)
+			return nil, rateLimitError(c.limitedUntil)
+		}
+		return nil, errors.New("YouTube: трек недоступен")
+	}
+	c.limitBackoff = 0
+	return v, nil
+}
+
 func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 	if !videoID.MatchString(id) {
 		return streamInfo{}, errors.New("неверный ID трека")
@@ -435,35 +487,47 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 	if s, ok := c.streams[id]; ok && time.Now().Before(s.until) {
 		return s, nil
 	}
-	client := yt.Client{HTTPClient: c.http, MaxRoutines: 1}
-	v, err := client.GetVideoContext(ctx, id)
+	var found streamInfo
+	err := c.withYT(func(client *yt.Client) error {
+		v, err := c.videoInfo(ctx, client, id)
+		if err != nil {
+			return err
+		}
+		formats := v.Formats.WithAudioChannels()
+		formats.Sort()
+		for _, f := range formats {
+			if f.Width != 0 || f.AudioChannels == 0 {
+				continue
+			}
+			// The firmware provides an AAC/MP4 decoder but no Matroska demuxer.
+			if !strings.HasPrefix(f.MimeType, "audio/mp4") {
+				continue
+			}
+			link, e := client.GetStreamURLContext(ctx, v, &f)
+			if e != nil {
+				log.Printf("stream url %s: %v", id, e)
+				continue
+			}
+			u, e := url.Parse(link)
+			if e != nil || u.Scheme != "https" || !strings.HasSuffix(u.Hostname(), ".googlevideo.com") {
+				continue
+			}
+			found = streamInfo{url: link, mime: f.MimeType, length: f.ContentLength, until: time.Now().Add(time.Hour), id: id}
+			if f.InitRange != nil && f.IndexRange != nil {
+				found.initEnd, _ = strconv.ParseInt(f.InitRange.End, 10, 64)
+				found.indexStart, _ = strconv.ParseInt(f.IndexRange.Start, 10, 64)
+				found.indexEnd, _ = strconv.ParseInt(f.IndexRange.End, 10, 64)
+			}
+			return nil
+		}
+		return errors.New("YouTube: подходящий аудиопоток отсутствует")
+	})
 	if err != nil {
-		return streamInfo{}, errors.New("YouTube: трек недоступен")
+		return streamInfo{}, err
 	}
-	formats := v.Formats.WithAudioChannels()
-	formats.Sort()
-	for _, f := range formats {
-		if f.Width != 0 || f.AudioChannels == 0 {
-			continue
-		}
-		// The firmware provides an AAC/MP4 decoder but no Matroska demuxer.
-		if !strings.HasPrefix(f.MimeType, "audio/mp4") {
-			continue
-		}
-		link, e := client.GetStreamURLContext(ctx, v, &f)
-		if e != nil {
-			continue
-		}
-		u, e := url.Parse(link)
-		if e != nil || u.Scheme != "https" || !strings.HasSuffix(u.Hostname(), ".googlevideo.com") {
-			continue
-		}
-		s := streamInfo{url: link, mime: f.MimeType, length: f.ContentLength, until: time.Now().Add(time.Hour), id: id}
-		if len(c.streams) >= 12 {
-			c.streams = map[string]streamInfo{}
-		}
-		c.streams[id] = s
-		return s, nil
+	if len(c.streams) >= 12 {
+		c.streams = map[string]streamInfo{}
 	}
-	return streamInfo{}, errors.New("YouTube: подходящий аудиопоток отсутствует")
+	c.streams[id] = found
+	return found, nil
 }

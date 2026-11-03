@@ -73,6 +73,8 @@ type castReceiver struct {
 	senders    int
 	lastSig    string
 	lastReport time.Time
+	lastPosMS  int64 // position at lastPosAt, to notice seeks
+	lastPosAt  time.Time
 	sendMu     sync.Mutex
 	session    context.CancelFunc
 }
@@ -719,6 +721,15 @@ func (c *castReceiver) reportLoop(ctx context.Context) {
 		sig := fmt.Sprintf("%s|%s|%d|%d", st.Status, cur, st.Index, len(st.Queue))
 		c.mu.Lock()
 		changed := sig != c.lastSig
+		// A seek keeps status and track but moves the position; senders need it.
+		expected := c.lastPosMS
+		if st.Status == "playing" {
+			expected += time.Since(c.lastPosAt).Milliseconds()
+		}
+		if d := st.PositionMS - expected; d > 3000 || d < -3000 {
+			changed = true
+		}
+		c.lastPosMS, c.lastPosAt = st.PositionMS, time.Now()
 		periodic := st.Status == "playing" && time.Since(c.lastReport) > 15*time.Second
 		if changed || periodic {
 			c.lastSig = sig
@@ -810,7 +821,17 @@ func (c *castReceiver) handle(ctx context.Context, m castMessage) {
 		go c.s.command(ctx, request{Action: m.Name})
 	case "seekTo":
 		if f, err := strconv.ParseFloat(pstr(m.Payload, "newTime"), 64); err == nil {
-			go c.s.castSeek(int64(f * 1000))
+			ms := int64(f * 1000)
+			// Acknowledge at once: the sender waits for the new position.
+			loading := c.stateChange(st)
+			loading.payload["state"] = "3"
+			loading.payload["currentTime"] = strconv.FormatFloat(f, 'f', 3, 64)
+			c.mu.Lock()
+			c.lastSig = ""
+			c.lastPosMS, c.lastPosAt = ms, time.Now()
+			c.mu.Unlock()
+			go c.send(ctx, loading)
+			go c.s.castSeek(ms)
 		}
 	}
 }
@@ -851,6 +872,13 @@ func (c *castReceiver) loadPlaylist(ctx context.Context, m castMessage) {
 	}
 	if idx < 0 || idx >= len(tracks) {
 		idx = 0
+	}
+	// Senders repeat setPlaylist for the same track; keep playing instead of
+	// resolving the stream again.
+	if st := c.s.snapshot(); st.Index >= 0 && st.Index < len(st.Queue) && st.Queue[st.Index].ID == tracks[idx].ID &&
+		(st.Status == "playing" || st.Status == "paused" || st.Status == "buffering") {
+		c.s.castUpdateQueue(tracks)
+		return
 	}
 	offset := int64(0)
 	if f, err := strconv.ParseFloat(pstr(m.Payload, "currentTime"), 64); err == nil && f > 1 {
