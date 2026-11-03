@@ -834,6 +834,7 @@ func serve() error {
 	go func() { errCh <- httpServer.ListenAndServe() }()
 	go s.voiceLoop(ctx)
 	go s.mediaLoop(ctx)
+	go s.castLoop(ctx)
 	go func() {
 		for {
 			conn, err := listener.Accept()

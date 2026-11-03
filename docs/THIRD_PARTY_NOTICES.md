@@ -14,6 +14,11 @@ reports the embedded dependency versions. Upstream source and license texts:
 - https://go.googlesource.com/text (BSD-3-Clause)
 - https://go.dev/LICENSE (BSD-3-Clause)
 
+The phone casting receiver (source/cast.go) is a Go reimplementation of the DIAL and
+YouTube Lounge protocol handling in https://github.com/patrickkfkan/yt-cast-receiver
+(MIT, Copyright (c) Patrick Kan) and the DIAL server behaviour of
+https://github.com/patrickkfkan/peer-dial.
+
 The native player is dynamically linked to GStreamer/GLib already present on the
 Station. No Yandex firmware libraries, device identities, account files,
 certificates, cookies or private keys are included in this package.
