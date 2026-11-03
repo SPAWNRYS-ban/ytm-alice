@@ -14,6 +14,7 @@ let importCredentials=null;
 let discoveredAccounts=[];
 let accountKey="";
 let previousAuth=null;
+let settings=null;
 const titles = {queue:'Очередь',search:'Поиск',liked:'Мои лайки',playlists:'Плейлисты',commands:'Голосовые команды',settings:'Настройки'};
 const statusText = {playing:'Сейчас играет',paused:'На паузе',stopped:'Готова слушать',searching:'Ищем музыку…',buffering:'Подготовка трека…',error:'Не удалось включить трек'};
 const formatTime = (ms) => { const s=Math.max(0,Math.floor((ms||0)/1000)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
@@ -124,6 +125,8 @@ function renderState(next) {
   $('elapsed').textContent=formatTime(state.position_ms);$('duration').textContent=formatTime(track?.duration_ms);
   $('queue-caption').textContent=track?`${state.queue.length} треков · выбран ${state.index+1}`:'Выбери музыку для начала';
   $('announce').checked=state.announce;
+  $('shuffle-queue').setAttribute('aria-pressed',String(!!state.shuffle));
+  $('shuffle-queue').textContent=state.shuffle?'По порядку':'Перемешать';
   $('sidebar-version').textContent=`ytm-alice ${state.version}`;
   if(state.auth)renderAuth(state.auth);
   $('logout-auth').disabled=!state.logged_in;
@@ -178,7 +181,7 @@ function showView(view) {
   if(view==='search') $('search-input').focus();
   if(view==='liked'&&!loadedLiked) perform(null,loadLiked);
   if(view==='playlists'&&!loadedPlaylists) perform(null,loadPlaylists);
-  if(view==='settings'&&state?.logged_in) perform(null,()=>command('auth-check'));
+  if(view==='settings'){perform(null,loadSettings);if(state?.logged_in)perform(null,()=>command('auth-check'));}
 }
 async function poll() {
   if(document.hidden || pending) {schedulePoll();return;}
@@ -236,6 +239,41 @@ $('connect-account').onclick=()=>perform($('connect-account'),async()=>{
  $('cookie-file').value='';$('account-choice').hidden=true;loadedLiked=false;loadedPlaylists=false;
  notice('Подключён профиль '+selected.name+'.',true);await request('/api/state');
 });
+const voiceActions={play:'Найти и включить',recommendations:'Рекомендации',pause:'Пауза',resume:'Продолжить',stop:'Стоп',next:'Следующий трек',previous:'Предыдущий трек',what:'Название трека','shuffle-on':'Перемешать','shuffle-off':'По порядку'};
+function addVoiceAlias(phrase='',action='play') {
+ const row=document.createElement('div');row.className='voice-alias';
+ const input=document.createElement('input');input.type='text';input.maxLength=120;input.placeholder='сыграй {query}';input.value=phrase;input.setAttribute('aria-label','Фраза голосовой команды');
+ const select=document.createElement('select');select.setAttribute('aria-label','Действие голосовой команды');
+ for(const [value,label] of Object.entries(voiceActions)){const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option);}select.value=action;
+ const remove=document.createElement('button');remove.type='button';remove.className='text-button';remove.textContent='Удалить';remove.onclick=()=>row.remove();
+ row.append(input,select,remove);$('voice-aliases').append(row);
+}
+async function loadSettings(){
+ const data=await command('config-get');settings=data.settings;
+ $('radio').checked=settings.radio;$('shuffle').checked=settings.shuffle;$('announce-errors').checked=settings.announce_errors;
+ $('playback-led').checked=settings.playback_led;$('playback-led').disabled=!data.led_control;
+ $('led-help').textContent=data.led_control?'Индикация диалога Алисы сохраняется':'Управление подсветкой этой модели пока недоступно';
+ $('announce-text').value=settings.announce_text;
+ $('web-port').value=settings.web_addr==='off'?'24721':settings.web_addr.split(':').at(-1);
+ $('voice-aliases').replaceChildren();for(const [phrase,action] of Object.entries(settings.voice_commands||{}))addVoiceAlias(phrase,action);
+}
+$('add-voice-alias').onclick=()=>{if($('voice-aliases').children.length<40)addVoiceAlias();};
+$('settings-form').addEventListener('submit',event=>{
+ event.preventDefault();perform($('save-settings'),async()=>{
+  if(!settings)throw new Error('Настройки ещё загружаются.');
+  const aliases={};for(const row of $('voice-aliases').children){const phrase=row.querySelector('input').value.trim().toLowerCase();if(!phrase)continue;if(Object.hasOwn(aliases,phrase))throw new Error('Команды не должны повторяться.');aliases[phrase]=row.querySelector('select').value;}
+  const port=Number($('web-port').value);if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Укажи порт от 1 до 65535.');
+  const host=settings.web_addr==='off'?'':settings.web_addr.slice(0,settings.web_addr.lastIndexOf(':'));
+  const next={web_addr:host+':'+port,radio:$('radio').checked,shuffle:$('shuffle').checked,announce_text:$('announce-text').value,announce_errors:$('announce-errors').checked,playback_led:$('playback-led').checked,voice_commands:aliases};
+  if($('playback-led').disabled)delete next.playback_led;
+  const oldPort=settings.web_addr;const oldShuffle=state?.shuffle;
+  const result=await command('config-set',{settings:next});settings=result.settings;
+  if(oldShuffle!==next.shuffle)await command(next.shuffle?'shuffle-on':'shuffle-off');
+  notice(oldPort!==next.web_addr?'Сохранено. Новый порт заработает после перезапуска сервиса.':'Настройки сохранены.',true);
+ });
+});
+$('shuffle-queue').onclick=()=>perform($('shuffle-queue'),()=>command(state?.shuffle?'shuffle-off':'shuffle-on'));
+$('recommendations').onclick=()=>perform($('recommendations'),()=>command('recommendations'));
 document.addEventListener('visibilitychange',()=>{clearTimeout(refreshTimer);if(!document.hidden)poll();else schedulePoll();});
 async function init(){
  try {

@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     invoke('install', '--yes', package)
     assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
     root = temporary/'root'
-    for binary in ('ytm-alice','ytm-alice-player','alice-media','bt-proxy'):
+    for binary in ('ytm-alice','ytm-alice-player','ytm-alice-resolver','alice-media','bt-proxy'):
         link = root/'bin'/binary
         assert link.is_symlink() and link.resolve().is_file() and os.access(link, os.X_OK), binary
     for name in ('LICENSE','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE','media/upstream/src/main.rs'):
@@ -64,4 +64,4 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     assert session.read_text() == '{"fixture":"session-preservation"}'
     assert session.stat().st_mode & 0o777 == 0o600
     invoke('doctor')
-    print(args.platform+': four executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')
+    print(args.platform+': five executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')

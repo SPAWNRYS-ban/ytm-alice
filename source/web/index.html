@@ -31,10 +31,10 @@
   </div>
  </section>
  <div id="notice" class="notice" role="status" hidden></div>
- <section id="view-queue" class="view panel"><div class="section-heading"><div><h2>Очередь</h2><p id="queue-caption">Выбери музыку для начала</p></div><button class="secondary-button" data-view="search">Найти музыку <svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow"></use></svg></button></div><div id="queue-list" class="track-list"></div></section>
+ <section id="view-queue" class="view panel"><div class="section-heading"><div><h2>Очередь</h2><p id="queue-caption">Выбери музыку для начала</p></div><div class="button-row"><button id="shuffle-queue" class="secondary-button" aria-pressed="false">Перемешать</button><button id="recommendations" class="secondary-button">Рекомендации</button><button class="secondary-button" data-view="search">Найти музыку <svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#arrow"></use></svg></button></div></div><div id="queue-list" class="track-list"></div></section>
  <section id="view-search" class="view panel" hidden><div class="section-heading"><div><h2>Поиск</h2><p>Исполнитель, название или ссылка YouTube Music</p></div></div><form id="search-form" class="search-form"><label class="sr-only" for="search-input">Поиск музыки</label><input id="search-input" type="search" placeholder="Например, Sewerslvt Newlove" maxlength="500" autocomplete="off" required><button class="primary-button" id="search-submit" type="submit">Найти</button></form><div id="search-results" class="track-list"><p class="empty-state">Любимый трек — в одном поиске.</p></div></section>
- <section id="view-liked" class="view panel" hidden><div class="section-heading"><div><h2>Твои любимые</h2><p>Понравившиеся треки YouTube Music · до 50 треков</p></div><button id="refresh-liked" class="secondary-button">Обновить лайки</button></div><div id="liked-list" class="track-list"></div></section>
- <section id="view-playlists" class="view panel" hidden><div class="section-heading"><div><h2>Личная коллекция</h2><p>Плейлисты твоей библиотеки · до 50 плейлистов</p></div><button id="refresh-playlists" class="secondary-button">Обновить плейлисты</button></div><div id="playlist-list" class="playlist-grid"></div></section>
+ <section id="view-liked" class="view panel" hidden><div class="section-heading"><div><h2>Твои любимые</h2><p>Понравившиеся треки YouTube Music</p></div><button id="refresh-liked" class="secondary-button">Обновить лайки</button></div><div id="liked-list" class="track-list"></div></section>
+ <section id="view-playlists" class="view panel" hidden><div class="section-heading"><div><h2>Личная коллекция</h2><p>Плейлисты твоей библиотеки</p></div><button id="refresh-playlists" class="secondary-button">Обновить плейлисты</button></div><div id="playlist-list" class="playlist-grid"></div></section>
  <section id="view-commands" class="view" hidden>
   <div class="commands-intro"><h2>Скажи «Алиса» и команду</h2><p>Для запуска YouTube Music называй трек или добавляй «на ютубе».</p></div>
   <div class="commands-grid">
@@ -43,7 +43,7 @@
     <div><dt>Поиск в YouTube Music</dt><dd>«Алиса, включи на ютубе джаз»</dd></div>
     <div><dt>Альбом</dt><dd>«Алиса, поставь альбом Random Access Memories»</dd></div>
     <div><dt>Найти плейлист</dt><dd>«Алиса, поставь плейлист lo-fi»</dd></div>
-    <div><dt>Понравившиеся треки</dt><dd>«Алиса, включи мои лайки»</dd></div>
+    <div><dt>Персональные рекомендации</dt><dd>«Алиса, включи музыку на ютубе»</dd></div><div><dt>Перемешивание</dt><dd>«Алиса, перемешай очередь»</dd></div><div><dt>Понравившиеся треки</dt><dd>«Алиса, включи мои лайки»</dd></div>
    </dl><p class="command-note">Для лайков подключи YouTube Music в настройках. Свои плейлисты можно выбрать в разделе «Плейлисты».</p></article>
    <article class="panel command-card"><h3>Управлять воспроизведением</h3><dl class="command-list">
     <div><dt>Пауза</dt><dd>«Алиса, пауза»</dd></div>
@@ -61,7 +61,18 @@
    <form id="auth-form"><label class="field-label" for="cookie-file">Файл cookies.txt</label><input id="cookie-file" type="file" accept=".txt,text/plain"><button id="import-auth" type="submit" class="primary-button">Показать аккаунты</button><p class="field-help">После загрузки выбери аккаунт по имени. Cookies дают доступ к сессии — экспортированный файл можно удалить после подключения.</p></form>
    <div id="account-choice" class="account-choice" hidden><label class="field-label" for="account-select">Профиль YouTube</label><select id="account-select"></select><p class="field-help">У каждого профиля свои лайки и плейлисты. Выбери тот, которым пользуешься в YouTube Music.</p><button id="connect-account" class="primary-button">Подключить выбранный профиль</button></div>
   </article>
-  <div class="settings-side"><article class="panel"><p class="eyebrow">ПОВЕДЕНИЕ</p><h2>Коротко и по делу</h2><label class="toggle-label" for="announce"><span>Говорить «Включаю»<small>Штатным голосом Алисы перед музыкой</small></span><input id="announce" type="checkbox" role="switch"></label></article></div>
+  <div class="settings-side"><article class="panel"><p class="eyebrow">ПОВЕДЕНИЕ</p><h2>Коротко и по делу</h2><label class="toggle-label" for="announce"><span>Фраза перед музыкой<small>Штатным голосом Алисы</small></span><input id="announce" type="checkbox" role="switch"></label></article>
+  <article class="panel"><h2>Воспроизведение и панель</h2><form id="settings-form">
+   <label class="toggle-label" for="radio"><span>Продолжать рекомендациями<small>Добавлять похожие треки в конце очереди</small></span><input id="radio" type="checkbox" role="switch"></label>
+   <label class="toggle-label" for="shuffle"><span>Перемешивать музыку<small>Текущий трек продолжит играть</small></span><input id="shuffle" type="checkbox" role="switch"></label>
+   <label class="toggle-label" for="announce-errors"><span>Сообщать об ошибках голосом</span><input id="announce-errors" type="checkbox" role="switch"></label>
+   <label class="toggle-label" for="playback-led"><span>Подсветка во время музыки<small id="led-help">Индикация диалога Алисы сохраняется</small></span><input id="playback-led" type="checkbox" role="switch"></label>
+   <label class="field-label" for="announce-text">Фраза перед музыкой</label><input id="announce-text" type="text" maxlength="200" placeholder="Включаю">
+   <label class="field-label" for="web-port">Порт панели</label><input id="web-port" type="number" min="1" max="65535" required><p class="field-help">Новый порт применяется после перезапуска сервиса. Затем добавь его к адресу Станции.</p>
+   <h3>Свои голосовые команды</h3><p class="field-help">Для поиска добавь {query} в конце фразы, например «сыграй {query}». Имя «Алиса» вводить не нужно.</p>
+   <div id="voice-aliases"></div><button id="add-voice-alias" class="secondary-button" type="button">Добавить команду</button>
+   <div class="button-row"><button id="save-settings" class="primary-button" type="submit">Сохранить настройки</button></div>
+  </form></article></div>
  </section>
 </main>
 </div>

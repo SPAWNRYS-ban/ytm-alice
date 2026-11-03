@@ -80,6 +80,7 @@ func thumbnailURL(item any) string {
 
 type Catalog struct {
 	http          *http.Client
+	playerSource  string
 	mu            sync.Mutex
 	cache         map[string]catalogEntry
 	streams       map[string]streamInfo
@@ -238,9 +239,7 @@ func parseTracks(root any) []Track {
 		}
 	}
 	walk(root)
-	if len(tracks) > 50 {
-		tracks = tracks[:50]
-	}
+
 	return tracks
 }
 func (c *Catalog) request(ctx context.Context, endpoint string, body map[string]any) (map[string]any, error) {
@@ -258,7 +257,8 @@ func (c *Catalog) requestWithClient(ctx context.Context, endpoint string, body m
 	if auth != nil && auth.PageID != "" {
 		user["onBehalfOfUser"] = auth.PageID
 	}
-	body["context"] = map[string]any{"client": map[string]any{"clientName": clientName, "clientVersion": prefix + time.Now().UTC().Format("20060102") + ".01.00", "hl": "ru", "gl": "US"}, "user": user}
+	clientContext := map[string]any{"clientName": clientName, "clientVersion": prefix + time.Now().UTC().Format("20060102") + ".01.00", "hl": "ru", "gl": "US"}
+	body["context"] = map[string]any{"client": clientContext, "user": user}
 	raw, _ := json.Marshal(body)
 	req, _ := http.NewRequestWithContext(ctx, "POST", "https://music.youtube.com/youtubei/v1/"+endpoint+"?alt=json", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
@@ -331,6 +331,9 @@ func (c *Catalog) lookup(ctx context.Context, q string) ([]Track, error) {
 				return nil, errors.New("неверный ID трека")
 			}
 			v, e := (&yt.Client{HTTPClient: c.http, MaxRoutines: 1}).GetVideoContext(ctx, id)
+			if e != nil && ctx.Err() == nil {
+				v, e = c.musicVideo(ctx, id)
+			}
 			err = e
 			if e == nil {
 				tracks = []Track{{ID: id, Title: v.Title, Artists: v.Author, DurationMS: v.Duration.Milliseconds(), ThumbnailURL: fallbackThumbnail(id)}}
@@ -412,11 +415,20 @@ func findBrowse(x any, kind string) string {
 	return ""
 }
 func (c *Catalog) browse(ctx context.Context, id string) ([]Track, error) {
-	d, e := c.request(ctx, "browse", map[string]any{"browseId": id})
-	if e != nil {
-		return nil, e
+	tracks := []Track{}
+	seen := map[string]bool{}
+	err := c.browsePages(ctx, id, func(page map[string]any) {
+		for _, track := range parseTracks(page) {
+			if !seen[track.ID] {
+				seen[track.ID] = true
+				tracks = append(tracks, track)
+			}
+		}
+	})
+	if err != nil {
+		return nil, err
 	}
-	return parseTracks(d), nil
+	return tracks, nil
 }
 func (c *Catalog) radio(ctx context.Context, id string) []Track {
 	d, e := c.request(ctx, "next", map[string]any{"videoId": id, "playlistId": "RDAMVM" + id, "isAudioOnly": true})
@@ -437,11 +449,19 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 	}
 	client := yt.Client{HTTPClient: c.http, MaxRoutines: 1}
 	v, err := client.GetVideoContext(ctx, id)
+	musicFallback := err != nil
 	if err != nil {
-		return streamInfo{}, errors.New("YouTube: трек недоступен")
+		if ctx.Err() != nil {
+			return streamInfo{}, resolverError(ctx.Err())
+		}
+		v, err = c.musicVideo(ctx, id)
+		if err != nil {
+			return streamInfo{}, err
+		}
 	}
 	formats := v.Formats.WithAudioChannels()
 	formats.Sort()
+	var streamErr error
 	for _, f := range formats {
 		if f.Width != 0 || f.AudioChannels == 0 {
 			continue
@@ -450,12 +470,25 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 		if !strings.HasPrefix(f.MimeType, "audio/mp4") {
 			continue
 		}
-		link, e := client.GetStreamURLContext(ctx, v, &f)
+		link := f.URL
+		parsed, parseErr := url.Parse(link)
+		var e error
+		if link == "" || parseErr != nil || parsed.Query().Get("n") != "" {
+			if c.playerSource != "" || musicFallback {
+				link, e = c.decipherURL(ctx, id, f)
+			} else {
+				link, e = client.GetStreamURLContext(ctx, v, &f)
+				if e != nil {
+					link, e = c.decipherURL(ctx, id, f)
+				}
+			}
+		}
 		if e != nil {
+			streamErr = e
 			continue
 		}
 		u, e := url.Parse(link)
-		if e != nil || u.Scheme != "https" || !strings.HasSuffix(u.Hostname(), ".googlevideo.com") {
+		if e != nil || !validAudioURL(u) {
 			continue
 		}
 		s := streamInfo{url: link, mime: f.MimeType, length: f.ContentLength, until: time.Now().Add(time.Hour), id: id}
@@ -464,6 +497,9 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 		}
 		c.streams[id] = s
 		return s, nil
+	}
+	if streamErr != nil {
+		return streamInfo{}, streamErr
 	}
 	return streamInfo{}, errors.New("YouTube: подходящий аудиопоток отсутствует")
 }

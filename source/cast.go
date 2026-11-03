@@ -889,6 +889,7 @@ func (s *Server) castTracks(ctx context.Context, ids []string) []Track {
 func (s *Server) castPlay(tracks []Track, idx int, offset int64) {
 	s.mu.Lock()
 	s.stopLocked()
+	s.queueCast = true
 	s.state.Queue = tracks
 	s.state.Index = idx
 	s.state.PositionMS = 0

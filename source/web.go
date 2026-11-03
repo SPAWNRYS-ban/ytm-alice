@@ -11,7 +11,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -34,10 +33,26 @@ func webCLI(action string) error {
 	if action != "status" {
 		return errors.New("web status")
 	}
-	fmt.Println("Панель: http://alice.lan")
+	address := defaultWebAddr
+	if out, err := call(request{Action: "config-get"}); err == nil && out.WebAddr != "" {
+		address = out.WebAddr
+	}
+	if address == "off" {
+		fmt.Println("Веб-панель отключена")
+		return nil
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	suffix := ":" + port
+	if port == "80" {
+		suffix = ""
+	}
+	fmt.Println("Панель: http://alice.lan" + suffix)
 	for _, ip := range localAddresses() {
-		if ip.To4() != nil && !ip.IsLoopback() {
-			fmt.Printf("По IP: http://%s\n", ip)
+		if ip.To4() != nil && !ip.IsLoopback() && (host == "" || host == "0.0.0.0" || host == ip.String()) {
+			fmt.Printf("По IP: http://%s%s\n", ip, suffix)
 		}
 	}
 	return nil
@@ -173,9 +188,13 @@ func (p *webPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !webDecode(w, r, &command) {
 		return
 	}
-	allowed := map[string]bool{"status": true, "queue": true, "search": true, "liked": true, "play": true, "select": true, "jump": true, "playlists": true, "playlist": true, "next": true, "previous": true, "pause": true, "resume": true, "toggle": true, "stop": true, "announce-on": true, "announce-off": true, "auth-status": true, "auth-check": true, "auth-import": true, "auth-discover": true, "auth-accounts": true, "auth-select": true, "auth-logout": true}
+	allowed := map[string]bool{"config-get": true, "config-set": true, "recommendations": true, "shuffle-on": true, "shuffle-off": true, "status": true, "queue": true, "search": true, "liked": true, "play": true, "select": true, "jump": true, "playlists": true, "playlist": true, "next": true, "previous": true, "pause": true, "resume": true, "toggle": true, "stop": true, "announce-on": true, "announce-off": true, "auth-status": true, "auth-check": true, "auth-import": true, "auth-discover": true, "auth-accounts": true, "auth-select": true, "auth-logout": true}
 	if !allowed[command.Action] || len([]rune(command.Query)) > 500 {
 		webError(w, 400, "команда панели не поддерживается")
+		return
+	}
+	if command.Settings != nil && command.Action != "config-set" {
+		webError(w, 400, "настройки разрешены только для config-set")
 		return
 	}
 	if command.Auth != nil && command.Action != "auth-import" && command.Action != "auth-discover" {
@@ -193,12 +212,9 @@ func (p *webPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func ptrState(s State) *State { return &s }
 func (s *Server) startWeb() (func(), error) {
-	address := os.Getenv("YTM_ALICE_WEB_ADDR")
+	address := effectiveWebAddr(s.getSettings())
 	if address == "off" {
 		return func() {}, nil
-	}
-	if address == "" {
-		address = ":80"
 	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
