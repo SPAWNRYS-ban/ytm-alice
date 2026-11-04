@@ -22,10 +22,10 @@
 
 Выберите пакет для своей модели: `yandexmicro` — Лайт 1,
 `yandexmini_2` — Мини 2 с часами. Ниже приведён пример для Лайт 1;
-для Мини 2 используйте файл `ytm-alice-0.7.2-hotfix-yandexmini_2.yampkg`.
+для Мини 2 используйте файл `ytm-alice-0.7.4-yandexmini_2.yampkg`.
 
 ```sh
-yam install --yes ytm-alice-0.7.2-hotfix-yandexmicro.yampkg
+yam install --yes ytm-alice-0.7.4-yandexmicro.yampkg
 /data/yam/bin/ytm-alice daemon install
 ```
 
@@ -90,6 +90,7 @@ ytm-alice
 | `ytm-alice select 2` | Включить второй результат поиска |
 | `ytm-alice queue` | Очередь |
 | `ytm-alice pause` / `ytm-alice resume` | Пауза / продолжить |
+| `ytm-alice seek 60` | Перейти к минуте трека с начала ближайшего аудиофрагмента |
 | `ytm-alice next` / `ytm-alice previous` | Следующий / предыдущий трек |
 | `ytm-alice stop` | Остановить музыку |
 | `ytm-alice status` | Текущий трек и состояние |

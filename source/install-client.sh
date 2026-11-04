@@ -35,7 +35,7 @@ chmod 755 "$pending"
 mv -f "$pending" "$destination/ytm-alice"
 pending=''
 printf 'Установлен %s/ytm-alice\n' "$destination"
-printf 'Подключение: ytm-alice connect http://alice.lan\n'
+printf 'Подключение: ytm-alice connect http://alice.lan:24721\n'
 case ":$PATH:" in
     *":$destination:"*) ;;
     *) printf 'Добавь в настройки shell: export PATH="%s:$PATH"\n' "$destination" ;;
