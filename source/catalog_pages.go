@@ -42,6 +42,44 @@ func continuationToken(root any) string {
 	return ""
 }
 
+// A playlist page also has a section continuation for endlessly refreshed
+// suggestions. Follow only the track shelf when it is present, even when
+// that shelf has no next page. Library grids still use the generic walker.
+func browseContents(root map[string]any) map[string]any {
+	var shelf func(any) (any, bool)
+	shelf = func(value any) (any, bool) {
+		switch v := value.(type) {
+		case map[string]any:
+			for _, key := range []string{"musicPlaylistShelfRenderer", "musicPlaylistShelfContinuation"} {
+				if content, ok := v[key].(map[string]any); ok {
+					return content, true
+				}
+			}
+			keys := make([]string, 0, len(v))
+			for key := range v {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				if content, ok := shelf(v[key]); ok {
+					return content, true
+				}
+			}
+		case []any:
+			for _, item := range v {
+				if content, ok := shelf(item); ok {
+					return content, true
+				}
+			}
+		}
+		return nil, false
+	}
+	if content, ok := shelf(root); ok {
+		return content.(map[string]any)
+	}
+	return root
+}
+
 func (c *Catalog) browsePages(ctx context.Context, id string, accept func(map[string]any)) error {
 	epoch := c.authEpoch.Load()
 	auth := c.credentials()
@@ -58,8 +96,9 @@ func (c *Catalog) browsePages(ctx context.Context, id string, accept func(map[st
 		if c.authEpoch.Load() != epoch {
 			return errors.New("аккаунт изменился; повторите загрузку")
 		}
-		accept(page)
-		token := continuationToken(page)
+		content := browseContents(page)
+		accept(content)
+		token := continuationToken(content)
 		if token == "" {
 			return nil
 		}

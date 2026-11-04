@@ -149,9 +149,13 @@ func (c *Catalog) decipherURL(ctx context.Context, id string, format yt.Format) 
 		if err != nil {
 			return "", errors.New("не удалось загрузить декодер YouTube")
 		}
-		c.playerSource = player
+		program, err := preprocessPlayer(player)
+		if err != nil {
+			return "", err
+		}
+		c.playerSource = program
 	}
-	input := map[string]any{"type": "player", "player": c.playerSource, "requests": requests, "output_preprocessed": false}
+	input := map[string]any{"type": "preprocessed", "preprocessed_player": c.playerSource, "requests": requests}
 	result, err := runDecipher(ctx, input)
 	if err != nil {
 		c.playerSource = ""

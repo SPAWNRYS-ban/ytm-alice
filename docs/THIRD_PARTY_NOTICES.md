@@ -60,6 +60,10 @@ https://github.com/rust-lang/compiler-builtins and https://musl.libc.org/.
   `4fb477f4af56880cfd324c48bd4294a2d2294e50`, Unlicense.
   Bundled JavaScript is in `source/resolver/solver.js`; its header includes the
   ISC license of meriyah 6.1.4 and MIT license of astring 1.9.0.
+- [tdewolff/parse](https://github.com/tdewolff/parse), version 2.8.11, MIT.
+  Its native Go parser preprocesses the player using the yt-dlp/ejs transform
+  selection rules before the isolated JavaScript execution. The license is
+  retained in `licenses/github.com_tdewolff_parse_v2_LICENSE.md`.
 - [QuickJS-ng](https://github.com/quickjs-ng/quickjs), version 0.18.0, MIT and
   the component notices retained in the upstream amalgamation. The archive is
   verified against SHA-256 in `source/native/fetch-quickjs.py` before building.

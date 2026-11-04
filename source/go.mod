@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/kkdai/youtube/v2 v2.10.7-0.20260829130232-3876742b95fd
+	github.com/tdewolff/parse/v2 v2.8.11
 )
 
 require (

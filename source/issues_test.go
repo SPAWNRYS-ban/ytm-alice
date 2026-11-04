@@ -127,6 +127,42 @@ func TestRepeatedContinuationIsReportedInsteadOfTruncating(t *testing.T) {
 	}
 }
 
+func TestPlaylistDoesNotFollowEndlessSuggestions(t *testing.T) {
+	for _, next := range []bool{false, true} {
+		t.Run(fmt.Sprint(next), func(t *testing.T) {
+			c := newCatalog()
+			calls := 0
+			c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				var body map[string]any
+				json.NewDecoder(r.Body).Decode(&body)
+				if calls == 1 {
+					tracks := trackPage(0, 7)
+					if next {
+						tracks["continuations"] = []any{map[string]any{"nextContinuationData": map[string]any{"continuation": "tracks-2"}}}
+					}
+					return jsonReply(map[string]any{"contents": map[string]any{"sectionListRenderer": map[string]any{
+						"contents":      []any{map[string]any{"musicPlaylistShelfRenderer": tracks}, map[string]any{"musicShelfRenderer": trackPage(1000, 10)}},
+						"continuations": []any{map[string]any{"nextContinuationData": map[string]any{"continuation": "suggestions"}}},
+					}}}), nil
+				}
+				if !next || calls != 2 || body["continuation"] != "tracks-2" {
+					t.Fatalf("followed suggestions instead of playlist: %v", body)
+				}
+				return jsonReply(map[string]any{"continuationContents": map[string]any{"musicPlaylistShelfContinuation": trackPage(7, 3)}}), nil
+			})}
+			tracks, err := c.browse(context.Background(), "VLPL_test")
+			want := 7
+			if next {
+				want = 10
+			}
+			if err != nil || len(tracks) != want {
+				t.Fatalf("got %d tracks: %v", len(tracks), err)
+			}
+		})
+	}
+}
+
 func TestExplicitTrackUsesMusicSessionOnly(t *testing.T) {
 	c := newCatalog()
 	c.auth = &Credentials{Cookie: "SAPISID=fixture-only", AuthUser: "0"}
