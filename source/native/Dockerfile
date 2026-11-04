@@ -7,7 +7,7 @@ ENV PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfi
 WORKDIR /src
 COPY player.c link-stubs.py resolver.c ./
 COPY .build/quickjs-amalgam.c .build/quickjs.h ./
-RUN arm-linux-gnueabihf-gcc -O2 -D_GNU_SOURCE resolver.c quickjs-amalgam.c -lm -ldl -pthread -latomic -s -o /native-resolver
+RUN arm-linux-gnueabihf-gcc -O2 -static -D_GNU_SOURCE resolver.c quickjs-amalgam.c -lm -ldl -pthread -latomic -s -o /native-resolver
 # Public 1.x headers supply the ABI; firmware libraries stay on the device.
 RUN arm-linux-gnueabihf-gcc -Os -Wall -Wextra -Werror -c player.c -o player.o $(pkg-config --cflags gstreamer-1.0) \
  && python3 link-stubs.py \

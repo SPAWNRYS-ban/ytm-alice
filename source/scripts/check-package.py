@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import struct
 import tempfile
 
 parser = argparse.ArgumentParser()
@@ -32,6 +33,14 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     for binary in ('ytm-alice','ytm-alice-player','ytm-alice-resolver','alice-media','bt-proxy'):
         link = root/'bin'/binary
         assert link.is_symlink() and link.resolve().is_file() and os.access(link, os.X_OK), binary
+    # The resolver is a self-contained ARM32 binary: no firmware loader or
+    # optional libatomic/libstdc++ may become a hidden installation requirement.
+    helper = (root/'bin/ytm-alice-resolver').read_bytes()
+    assert helper[:7] == b'\x7fELF\x01\x01\x01'
+    offset = struct.unpack_from('<I', helper, 28)[0]
+    entry_size, count = struct.unpack_from('<HH', helper, 42)
+    assert all(struct.unpack_from('<I', helper, offset+i*entry_size)[0] not in (2, 3)
+               for i in range(count)), 'resolver has dynamic dependencies'
     for name in ('LICENSE','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE','media/upstream/src/main.rs'):
         assert (root/'share/local.ytm-alice'/name).is_file(), name
     forbidden = {'youtube-session.json','state.json','settings.json','id_ed25519','cookies.sqlite','target','.git'}
