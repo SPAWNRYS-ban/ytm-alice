@@ -8,6 +8,7 @@ import http.cookiejar
 from http.cookies import SimpleCookie, CookieError
 import json
 import locale
+import math
 import os
 import queue
 import select
@@ -32,7 +33,7 @@ STATES = {'playing': 'Играет', 'paused': 'Пауза', 'stopped': 'Ост�
 ALIASES = {'p': 'play', 'n': 'next', 'b': 'previous', 'prev': 'previous',
            's': 'status', 'q': 'queue', 'find': 'search', 'ui': 'tui'}
 COMMANDS = {'connect', 'play', 'pause', 'resume', 'toggle', 'next', 'previous', 'stop',
-            'status', 'queue', 'search', 'select', 'jump', 'tui',
+            'status', 'queue', 'search', 'select', 'jump', 'seek', 'tui',
             'announce-on', 'announce-off', 'daemon', 'say', 'probe', 'web',
             'login', 'logout', 'auth', 'liked', 'playlists', 'playlist',
             'config', 'recommendations', 'shuffle-on', 'shuffle-off'}
@@ -134,12 +135,12 @@ class Client:
             process.stdin.close()
             process.stdout.close()
 
-    def request(self, action='status', query_text='', index=None, auth=None, settings=None):
+    def request(self, action='status', query_text='', index=None, auth=None, settings=None, position_ms=None):
         with self.lock:
             if self.closed:
                 raise ClientError('Клиент Станции закрыт.')
             if self.base_url is not None:
-                return self.http_request(action, query_text, index, auth, settings)
+                return self.http_request(action, query_text, index, auth, settings, position_ms)
             if self.process is None:
                 command = self.transport
                 if command is None:
@@ -155,6 +156,7 @@ class Client:
             if index is not None:request['index'] = index
             if auth is not None:request['auth'] = auth
             if settings is not None:request['settings'] = settings
+            if position_ms is not None:request['position_ms'] = position_ms
             try:
                 process.stdin.write((json.dumps(request, ensure_ascii=False)+'\n').encode())
                 process.stdin.flush()
@@ -181,11 +183,12 @@ class Client:
                 raise ClientError(result['error'], result)
             return result
 
-    def http_request(self, action, query_text, index, auth, settings=None):
+    def http_request(self, action, query_text, index, auth, settings=None, position_ms=None):
         payload = {'action': action, 'query': query_text}
         if index is not None:payload['index'] = index
         if auth is not None:payload['auth'] = auth
         if settings is not None:payload['settings'] = settings
+        if position_ms is not None:payload['position_ms'] = position_ms
         request = urllib.request.Request(self.base_url+'/api/command',
             data=json.dumps(payload, ensure_ascii=False).encode(),
             headers={'Content-Type':'application/json', 'Origin':self.base_url, 'X-Ytm-Client':'web'})
@@ -587,7 +590,7 @@ def main():
     parser.add_argument('--account-index', type=int, choices=range(100), metavar='N',
                         help='login: индекс Google-аккаунта, по умолчанию 0')
     parser.add_argument('action', nargs='?', help='connect URL, play, search, select N, jump N, pause, resume, '
-                        'toggle, next, previous, stop, status, queue, ui, login, logout, auth status/check, '
+                        'toggle, seek SECONDS, next, previous, stop, status, queue, ui, login, logout, auth status/check, '
                         'liked, playlists, playlist ID, recommendations, shuffle-on/off, config get/set, announce-on/off, daemon, web status')
     parser.add_argument('query', nargs='*', help='запрос, ссылка или номер трека, начиная с 1')
     args = parser.parse_args()
@@ -614,6 +617,13 @@ def main():
         try:action, settings = config_request(args.query)
         except ClientError as error:parser.error(str(error))
     index = None
+    position_ms = None
+    if action == 'seek':
+        try:seconds = float(text)
+        except ValueError:parser.error('нужна позиция от 0 до 7200 секунд')
+        if not math.isfinite(seconds) or not 0 <= seconds <= 7200:
+            parser.error('нужна позиция от 0 до 7200 секунд')
+        position_ms = int(seconds*1000)
     if action in ('select', 'jump'):
         try:index = int(text)
         except ValueError:parser.error('нужен номер трека, начиная с 1')
@@ -642,7 +652,7 @@ def main():
         if action == 'login':
             credentials = login_credentials(args)
             result = client.request('auth-import', auth=credentials)
-        else:result = client.request(action, text, index, settings=settings)
+        else:result = client.request(action, text, index, settings=settings, position_ms=position_ms)
         if args.json:print(json.dumps(result, ensure_ascii=False, indent=2))
         else:human(action, result)
         return 0

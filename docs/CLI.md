@@ -24,6 +24,7 @@ ytm-alice play "Daft Punk Get Lucky"
 ytm-alice search "ambient"
 ytm-alice select 2
 ytm-alice pause
+ytm-alice seek 60                 # перейти к минуте трека
 ytm-alice next
 ytm-alice --json status
 ```
@@ -51,6 +52,7 @@ Python и десктопный клиент на самой Станции не 
 | `ytm-alice select 2` | Включить результат последнего поиска |
 | `ytm-alice queue` / `ytm-alice jump 3` | Очередь / выбрать трек в ней |
 | `ytm-alice pause` / `resume` / `toggle` | Пауза / продолжить / переключить |
+| `ytm-alice seek 60` | Перейти к 60-й секунде (с начала ближайшего аудиофрагмента) |
 | `ytm-alice next` / `previous` / `stop` | Следующий / предыдущий / остановить |
 | `ytm-alice recommendations` | Персональные рекомендации после входа |
 | `ytm-alice shuffle-on` / `shuffle-off` | Перемешать очередь / вернуть порядок |
@@ -65,6 +67,10 @@ Python и десктопный клиент на самой Станции не 
 | `ytm-alice web status` | Адреса веб-панели |
 | `ytm-alice daemon restart` | Перезапустить сервис |
 | `ytm-alice --help` / `--version` | Справка / версия |
+
+Перемотка доступна для MP4-потоков с индексом фрагментов. При ограничении
+YouTube HTTP 429 повторные запросы воспроизведения приостанавливаются на 2 минуты;
+повторный отказ увеличивает паузу до 30 минут. Уже полученные ссылки продолжают работать.
 
 Для ручной установки `.yampkg` на самой Станции:
 

@@ -28,7 +28,15 @@ var decipherScript []byte
 var playerScriptPath = regexp.MustCompile(`/s/player/[A-Za-z0-9_-]+/[A-Za-z0-9._/-]*/base\.js`)
 
 func (c *Catalog) playerProgram(ctx context.Context, id string) (string, error) {
-	client := *c.http
+	var program string
+	err := c.withYT(func(client *yt.Client) (err error) {
+		program, err = readPlayerProgram(ctx, id, client.HTTPClient)
+		return err
+	})
+	return program, err
+}
+func readPlayerProgram(ctx context.Context, id string, h *http.Client) (string, error) {
+	client := *h
 	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
 		if len(via) > 4 || r.URL.Scheme != "https" || (r.URL.Host != "www.youtube.com" && r.URL.Host != "youtube.com") {
 			return http.ErrUseLastResponse
@@ -147,6 +155,10 @@ func (c *Catalog) decipherURL(ctx context.Context, id string, format yt.Format) 
 	if c.playerSource == "" {
 		player, err := c.playerProgram(ctx, id)
 		if err != nil {
+			var limited rateLimited
+			if errors.As(err, &limited) {
+				return "", err
+			}
 			return "", errors.New("не удалось загрузить декодер YouTube")
 		}
 		program, err := preprocessPlayer(player)

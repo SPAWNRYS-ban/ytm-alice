@@ -90,16 +90,25 @@ type Catalog struct {
 	authEpoch     atomic.Uint64
 	authResult    AuthStatus
 	authCheckedAt time.Time
+	// YouTube answers 429 to a rate-limited IP; back off instead of retrying.
+	limitMu      sync.Mutex
+	limitedUntil time.Time
+	limitBackoff time.Duration
+	// One library client for all tracks so its visitor id and player JS caches work.
+	ytMu      sync.Mutex
+	ytClient  *yt.Client
+	ytCreated time.Time
 }
 type catalogEntry struct {
 	tracks []Track
 	until  time.Time
 }
 type streamInfo struct {
-	url, mime string
-	length    int64
-	until     time.Time
-	id        string
+	url, mime                     string
+	length                        int64
+	until                         time.Time
+	id                            string
+	initEnd, indexStart, indexEnd int64
 }
 
 var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
@@ -249,6 +258,11 @@ func (c *Catalog) requestWithAuth(ctx context.Context, endpoint string, body map
 	return c.requestWithClient(ctx, endpoint, body, auth, "WEB_REMIX")
 }
 func (c *Catalog) requestWithClient(ctx context.Context, endpoint string, body map[string]any, auth *Credentials, clientName string) (map[string]any, error) {
+	if endpoint == "player" {
+		if err := c.playbackLimit(); err != nil {
+			return nil, err
+		}
+	}
 	prefix := "1."
 	if clientName == "WEB" {
 		prefix = "2."
@@ -275,6 +289,9 @@ func (c *Catalog) requestWithClient(ctx context.Context, endpoint string, body m
 		return nil, errors.New("YouTube Music: network unavailable")
 	}
 	defer resp.Body.Close()
+	if endpoint == "player" && resp.StatusCode == http.StatusTooManyRequests {
+		return nil, c.noteRateLimit()
+	}
 	if resp.StatusCode != 200 {
 		if auth != nil && (resp.StatusCode == 401 || resp.StatusCode == 403) {
 			c.setAuthResult(auth, nil, errSessionExpired)
@@ -330,10 +347,7 @@ func (c *Catalog) lookup(ctx context.Context, q string) ([]Track, error) {
 			if !videoID.MatchString(id) {
 				return nil, errors.New("неверный ID трека")
 			}
-			v, e := (&yt.Client{HTTPClient: c.http, MaxRoutines: 1}).GetVideoContext(ctx, id)
-			if e != nil && ctx.Err() == nil {
-				v, e = c.musicVideo(ctx, id)
-			}
+			v, e := c.trackVideo(ctx, id)
 			err = e
 			if e == nil {
 				tracks = []Track{{ID: id, Title: v.Title, Artists: v.Author, DurationMS: v.Duration.Milliseconds(), ThumbnailURL: fallbackThumbnail(id)}}
@@ -447,28 +461,9 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 	if s, ok := c.streams[id]; ok && time.Now().Before(s.until) {
 		return s, nil
 	}
-	client := yt.Client{HTTPClient: c.http, MaxRoutines: 1}
-	var v *yt.Video
-	var err, musicErr error
-	// Use the connected Music profile first. A public client can report OK
-	// while issuing a CDN URL that is forbidden for this session or region.
-	if c.credentials() != nil {
-		v, musicErr = c.musicVideo(ctx, id)
-	}
-	if v == nil {
-		v, err = client.GetVideoContext(ctx, id)
-	}
+	v, err := c.trackVideo(ctx, id)
 	if err != nil {
-		if ctx.Err() != nil {
-			return streamInfo{}, resolverError(ctx.Err())
-		}
-		if musicErr != nil {
-			return streamInfo{}, musicErr
-		}
-		v, err = c.musicVideo(ctx, id)
-		if err != nil {
-			return streamInfo{}, err
-		}
+		return streamInfo{}, err
 	}
 	formats := v.Formats.WithAudioChannels()
 	formats.Sort()
@@ -498,6 +493,13 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 			continue
 		}
 		s := streamInfo{url: link, mime: f.MimeType, length: f.ContentLength, until: time.Now().Add(time.Hour), id: id}
+		if f.InitRange != nil && f.IndexRange != nil {
+			s.initEnd, _ = strconv.ParseInt(f.InitRange.End, 10, 64)
+			s.indexStart, _ = strconv.ParseInt(f.IndexRange.Start, 10, 64)
+			s.indexEnd, _ = strconv.ParseInt(f.IndexRange.End, 10, 64)
+		}
+		c.clearRateLimit()
+
 		if len(c.streams) >= 12 {
 			c.streams = map[string]streamInfo{}
 		}

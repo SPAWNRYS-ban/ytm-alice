@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -87,6 +88,7 @@ type nativePlayer struct {
 	token   string
 	source  streamInfo
 	attempt int
+	window  *seekWindow // set when playback starts mid-track
 }
 
 func (p *nativePlayer) send(line string) {
@@ -308,8 +310,23 @@ func (s *Server) command(ctx context.Context, r request) response {
 			s.state.PositionMS = 0
 			s.state.Error = ""
 		case "seek":
+			if r.PositionMS < 0 || r.PositionMS > 7200000 {
+				s.mu.Unlock()
+				return response{Error: "нужна позиция от 0 до 7200 секунд"}
+			}
+			if len(s.state.Queue) == 0 {
+				s.mu.Unlock()
+				return response{Error: "плеер не запущен"}
+			}
+			if r.PositionMS > 0 && s.player != nil && !s.player.source.hasSeekIndex() {
+				s.mu.Unlock()
+				return response{Error: "этот аудиопоток не поддерживает перемотку"}
+			}
+			// Restart the track from the fragment that contains the position (see seek.go).
 			s.mu.Unlock()
-			return response{Error: "Штатный плеер этой прошивки не поддерживает надёжную перемотку"}
+			s.start(max(r.PositionMS, 0), false)
+			v := s.snapshot()
+			return response{State: &v}
 		case "next", "previous":
 			step := 1
 			if r.Action == "previous" {
@@ -399,6 +416,13 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			close(speechDone)
 		}
 		src, err := s.catalog.resolve(ctx, t.ID)
+		var win *seekWindow
+		if err == nil && offset > 0 {
+			var werr error
+			if win, werr = s.catalog.seekWindow(ctx, src, offset); werr != nil {
+				err = fmt.Errorf("не удалось перемотать: %v", werr)
+			}
+		}
 		select {
 		case <-speechDone:
 		case <-ctx.Done():
@@ -440,7 +464,10 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 		} else {
 			cmd.Stderr = io.Discard
 		}
-		p := &nativePlayer{cmd: cmd, in: in, token: token, source: src, attempt: attempt}
+		p := &nativePlayer{cmd: cmd, in: in, token: token, source: src, attempt: attempt, window: win}
+		if win != nil {
+			s.state.PositionMS = win.startMS
+		}
 		s.player = p
 		if e = cmd.Start(); e != nil {
 			s.player = nil
@@ -448,7 +475,7 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			s.failLocked("штатный GStreamer недоступен")
 			return
 		}
-		go s.monitor(p, g, out, offset)
+		go s.monitor(p, g, out)
 		go s.fillRadio(g, t.ID)
 	}()
 }
@@ -458,10 +485,9 @@ func (s *Server) failLocked(message string) {
 	s.notifyFailure(s.generation)
 	s.saveLocked()
 }
-func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset int64) {
+func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser) {
 	scanner := bufio.NewScanner(out)
 	natural := false
-	seeked := offset == 0
 	for scanner.Scan() {
 		var ev struct {
 			Event      string `json:"event"`
@@ -478,10 +504,6 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset in
 		switch ev.Event {
 		case "playing":
 			s.state.Status = "playing"
-			if !seeked {
-				p.send("seek " + strconv.FormatInt(offset, 10))
-				seeked = true
-			}
 			s.saveLocked()
 		case "paused":
 			if s.state.Status != "buffering" {
@@ -489,6 +511,11 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset in
 			}
 		case "position":
 			s.state.PositionMS = ev.PositionMS
+			// tfdtWriter always rebases timestamps to zero. Keep the offset
+			// after playback passes the original seek target as well.
+			if p.window != nil {
+				s.state.PositionMS = p.window.startMS + ev.PositionMS
+			}
 		case "eos":
 			natural = true
 		case "error":
@@ -540,7 +567,19 @@ func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := p.source
+	win := p.window
 	s.mu.Unlock()
+	if win != nil {
+		if r.Method == "HEAD" {
+			w.Header().Set("Content-Type", src.mime)
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Length", strconv.FormatInt(win.length(src), 10))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		s.relayWindow(w, r, p, src, win)
+		return
+	}
 	if r.Method == "HEAD" {
 		w.Header().Set("Content-Type", src.mime)
 		w.Header().Set("Accept-Ranges", "bytes")
@@ -944,6 +983,7 @@ func help() {
   web status                 адреса локальной HTTP-панели
   status | queue             состояние и очередь
   pause | resume | toggle | stop  управление воспроизведением
+  seek СЕКУНДЫ              перейти к позиции (ближайший аудиофрагмент)
   next | previous            следующий / предыдущий трек
   announce-on | announce-off  фраза Алисы перед музыкой
   recommendations            персональные рекомендации (нужен вход)
@@ -1183,7 +1223,7 @@ func main() {
 	}
 	if action == "seek" {
 		v, e := strconv.ParseFloat(r.Query, 64)
-		if e != nil || v < 0 || v > 7200 {
+		if e != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 7200 {
 			fmt.Fprintln(os.Stderr, "нужна позиция в секундах")
 			os.Exit(2)
 		}
