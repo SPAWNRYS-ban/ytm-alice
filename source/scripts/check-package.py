@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import struct
 import tempfile
 
 parser = argparse.ArgumentParser()
@@ -29,18 +30,29 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     invoke('install', '--yes', package)
     assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
     root = temporary/'root'
-    for binary in ('ytm-alice','ytm-alice-player','alice-media','bt-proxy'):
+    for binary in ('ytm-alice','ytm-alice-player','ytm-alice-resolver','alice-media','bt-proxy'):
         link = root/'bin'/binary
         assert link.is_symlink() and link.resolve().is_file() and os.access(link, os.X_OK), binary
+    # The resolver is a self-contained ARM32 binary: no firmware loader or
+    # optional libatomic/libstdc++ may become a hidden installation requirement.
+    helper = (root/'bin/ytm-alice-resolver').read_bytes()
+    assert helper[:7] == b'\x7fELF\x01\x01\x01'
+    offset = struct.unpack_from('<I', helper, 28)[0]
+    entry_size, count = struct.unpack_from('<HH', helper, 42)
+    assert all(struct.unpack_from('<I', helper, offset+i*entry_size)[0] not in (2, 3)
+               for i in range(count)), 'resolver has dynamic dependencies'
     for name in ('LICENSE','THIRD_PARTY_NOTICES.md','media/UPSTREAM-LICENSE','media/upstream/src/main.rs'):
         assert (root/'share/local.ytm-alice'/name).is_file(), name
-    forbidden = {'youtube-session.json','state.json','id_ed25519','cookies.sqlite','target','.git'}
+    forbidden = {'youtube-session.json','state.json','settings.json','id_ed25519','cookies.sqlite','target','.git'}
     assert not any(path.name in forbidden for path in (root/'pkgs').rglob('*'))
     data = root/'var/local.ytm-alice'
     data.mkdir(parents=True, exist_ok=True)
     session = data/'youtube-session.json'
     session.write_text('{"fixture":"session-preservation"}')
     session.chmod(0o600)
+    settings = data/'settings.json'
+    settings.write_text('{"web_addr":":24721","radio":false}')
+    settings.chmod(0o600)
     invoke('remove', 'local/ytm-alice')
     assert not invoke('list').strip()
     assert not (root/'bin/bt-proxy').exists()
@@ -63,5 +75,7 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     assert not (root/'pkgs/local/alice-media').exists()
     assert session.read_text() == '{"fixture":"session-preservation"}'
     assert session.stat().st_mode & 0o777 == 0o600
+    assert settings.read_text() == '{"web_addr":":24721","radio":false}'
+    assert settings.stat().st_mode & 0o777 == 0o600
     invoke('doctor')
-    print(args.platform+': four executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')
+    print(args.platform+': five executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')

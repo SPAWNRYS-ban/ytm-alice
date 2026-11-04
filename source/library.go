@@ -49,9 +49,7 @@ func parsePlaylists(root any) []Playlist {
 		}
 	}
 	walk(root)
-	if len(result) > 50 {
-		result = result[:50]
-	}
+
 	return result
 }
 
@@ -59,9 +57,18 @@ func (c *Catalog) library(ctx context.Context) ([]Playlist, error) {
 	if err := c.requireAuth(ctx); err != nil {
 		return nil, err
 	}
-	data, err := c.request(ctx, "browse", map[string]any{"browseId": "FEmusic_liked_playlists"})
+	lists := []Playlist{}
+	seen := map[string]bool{}
+	err := c.browsePages(ctx, "FEmusic_liked_playlists", func(page map[string]any) {
+		for _, list := range parsePlaylists(page) {
+			if !seen[list.ID] {
+				seen[list.ID] = true
+				lists = append(lists, list)
+			}
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
-	return parsePlaylists(data), nil
+	return lists, nil
 }

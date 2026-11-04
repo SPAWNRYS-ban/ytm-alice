@@ -8,6 +8,7 @@ conflicts: [local/alice-media]
 replaces: [local/alice-media]
 files:
   bin/ytm-alice: dist/ytm-alice
+  bin/ytm-alice-resolver: dist/ytm-alice-resolver
   bin/ytm-alice-player: dist/ytm-alice-player
   bin/alice-media: media/alice-media
   bin/bt-proxy: media/dist/bt-proxy
@@ -17,6 +18,7 @@ files:
   share/local.ytm-alice/LICENSE: ../licenses/LICENSE
   share/local.ytm-alice/licenses/: ../licenses/
   share/local.ytm-alice/RELEASE.md: ../docs/RELEASE.md
+  share/local.ytm-alice/SETTINGS.md: ../docs/SETTINGS.md
   share/local.ytm-alice/WEBUI.md: ../docs/WEBUI.md
   share/local.ytm-alice/media/bus.conf: media/bus.conf
   share/local.ytm-alice/media/README.md: ../docs/MEDIA.md

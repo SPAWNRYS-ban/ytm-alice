@@ -18,7 +18,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ```sh
-ytm-alice connect http://IP_СТАНЦИИ
+ytm-alice connect http://IP_СТАНЦИИ:24721
 ytm-alice                         # интерактивная панель
 ytm-alice play "Daft Punk Get Lucky"
 ytm-alice search "ambient"
@@ -32,7 +32,7 @@ ytm-alice --json status
 `n`/`b` — следующий/предыдущий трек, `l` — лайки, `L` — плейлисты, `q` — выход.
 
 Адрес сохраняется в `~/.config/ytm-alice/config.json`. Для разового подключения
-есть `--url http://IP_СТАНЦИИ`, для скриптов — `YTM_ALICE_URL` и `--json`.
+есть `--url http://IP_СТАНЦИИ:24721`, для скриптов — `YTM_ALICE_URL` и `--json`.
 Старый способ управления через SSH доступен с `--ssh`.
 Повторный запуск установщика обновляет клиент. Удаление —
 `rm ~/.local/bin/ytm-alice`; сохранённый адрес удаляется отдельно.
@@ -52,7 +52,10 @@ Python и десктопный клиент на самой Станции не 
 | `ytm-alice queue` / `ytm-alice jump 3` | Очередь / выбрать трек в ней |
 | `ytm-alice pause` / `resume` / `toggle` | Пауза / продолжить / переключить |
 | `ytm-alice next` / `previous` / `stop` | Следующий / предыдущий / остановить |
-| `ytm-alice seek 60` | Перейти к 60-й секунде |
+| `ytm-alice recommendations` | Персональные рекомендации после входа |
+| `ytm-alice shuffle-on` / `shuffle-off` | Перемешать очередь / вернуть порядок |
+| `ytm-alice config get` | Посмотреть настройки |
+| `ytm-alice config set web_addr :24721` | Сохранить адрес панели; затем `daemon restart` |
 | `ytm-alice status` / `ytm-alice --json status` | Состояние в текстовом / JSON-формате |
 | `ytm-alice liked` / `play "мои лайки"` | Показать / включить лайки |
 | `ytm-alice playlists` / `playlist ID` | Плейлисты / включить выбранный |

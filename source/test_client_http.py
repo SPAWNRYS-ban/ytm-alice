@@ -97,7 +97,7 @@ class HTTPTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'nested/config.json'
             with patch.dict(os.environ, {'YTM_ALICE_CONFIG':str(path), 'YTM_ALICE_URL':''}):
-                self.assertEqual(cli.connection_url(), 'http://alice.lan')
+                self.assertEqual(cli.connection_url(), 'http://alice.lan:24721')
                 cli.save_connection('http://station.local:8080/')
                 self.assertEqual(cli.connection_url(), 'http://station.local:8080')
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -108,6 +108,22 @@ class HTTPTests(unittest.TestCase):
                       'http://alice.lan/path', 'http://alice.lan?x=1', 'http://alice.lan\n'):
             with self.subTest(value=value), self.assertRaises(cli.ClientError):
                 cli.normalize_url(value)
+
+
+class SettingsTests(unittest.TestCase):
+    def test_partial_settings_patch_crosses_http_and_keeps_server_result(self):
+        received=[]
+        def reply(handler):
+            body=json.loads(handler.payload);received.append(body)
+            handler.send_response(200);handler.end_headers()
+            handler.wfile.write(json.dumps({'settings':{'radio':False,'web_addr':':24721'}}).encode())
+        action, patch=cli.config_request(['set','radio','false'])
+        with server(reply) as url:
+            client=cli.Client(base_url=url);self.addCleanup(client.close)
+            self.assertEqual(client.request(action,settings=patch)['settings']['radio'],False)
+        self.assertEqual(received[0]['action'],'config-set')
+        self.assertEqual(received[0]['settings'],{'radio':False})
+        with self.assertRaises(cli.ClientError):cli.config_request(['set','radio','maybe'])
 
 
 class InstallerTests(unittest.TestCase):

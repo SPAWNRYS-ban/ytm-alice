@@ -20,3 +20,7 @@ state.json
 id_ed25519*
 *.pem
 *.key
+
+/source/native/.build/
+/.playwright-cli/
+/output/playwright/

@@ -12,6 +12,7 @@ import (
 // Cookie values are limited to 48 KB; JSON escaping can expand that size.
 // Use the same bounded envelope over SSH, the Unix socket and persistence.
 const maxControlRequestBytes = 512 << 10
+const maxControlResponseBytes = 16 << 20
 
 func (s *Server) controlConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
