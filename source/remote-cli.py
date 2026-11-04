@@ -34,7 +34,8 @@ ALIASES = {'p': 'play', 'n': 'next', 'b': 'previous', 'prev': 'previous',
 COMMANDS = {'connect', 'play', 'pause', 'resume', 'toggle', 'next', 'previous', 'stop',
             'status', 'queue', 'search', 'select', 'jump', 'tui',
             'announce-on', 'announce-off', 'daemon', 'say', 'probe', 'web',
-            'login', 'logout', 'auth', 'liked', 'playlists', 'playlist'}
+            'login', 'logout', 'auth', 'liked', 'playlists', 'playlist',
+            'config', 'recommendations', 'shuffle-on', 'shuffle-off'}
 
 
 class ClientError(Exception):
@@ -68,7 +69,7 @@ def connection_url(explicit=None):
     path = config_path()
     try:
         saved = json.loads(path.read_text()) if path.is_file() else {}
-        return normalize_url(saved.get('url', 'http://alice.lan'))
+        return normalize_url(saved.get('url', 'http://alice.lan:24721'))
     except (OSError, ValueError, AttributeError) as error:
         raise ClientError('Не удалось прочитать настройки подключения: '+str(path)) from error
 
@@ -133,12 +134,12 @@ class Client:
             process.stdin.close()
             process.stdout.close()
 
-    def request(self, action='status', query_text='', index=None, auth=None):
+    def request(self, action='status', query_text='', index=None, auth=None, settings=None):
         with self.lock:
             if self.closed:
                 raise ClientError('Клиент Станции закрыт.')
             if self.base_url is not None:
-                return self.http_request(action, query_text, index, auth)
+                return self.http_request(action, query_text, index, auth, settings)
             if self.process is None:
                 command = self.transport
                 if command is None:
@@ -153,6 +154,7 @@ class Client:
             request = {'action': action, 'query': query_text}
             if index is not None:request['index'] = index
             if auth is not None:request['auth'] = auth
+            if settings is not None:request['settings'] = settings
             try:
                 process.stdin.write((json.dumps(request, ensure_ascii=False)+'\n').encode())
                 process.stdin.flush()
@@ -165,7 +167,7 @@ class Client:
                     if not block:
                         raise ClientError('Нет ответа от колонки. Проверьте SSH-доступ и версию ytm-alice.')
                     self.buffer.extend(block)
-                    if len(self.buffer) > 1 << 20:
+                    if len(self.buffer) > 16 << 20:
                         raise ClientError('Слишком большой ответ от колонки.')
                 line, _, rest = self.buffer.partition(b'\n')
                 self.buffer = bytearray(rest)
@@ -179,10 +181,11 @@ class Client:
                 raise ClientError(result['error'], result)
             return result
 
-    def http_request(self, action, query_text, index, auth):
+    def http_request(self, action, query_text, index, auth, settings=None):
         payload = {'action': action, 'query': query_text}
         if index is not None:payload['index'] = index
         if auth is not None:payload['auth'] = auth
+        if settings is not None:payload['settings'] = settings
         request = urllib.request.Request(self.base_url+'/api/command',
             data=json.dumps(payload, ensure_ascii=False).encode(),
             headers={'Content-Type':'application/json', 'Origin':self.base_url, 'X-Ytm-Client':'web'})
@@ -193,8 +196,8 @@ class Client:
             except urllib.error.HTTPError as error:
                 response = error
             with response:
-                raw = response.read((1 << 20)+1)
-                if len(raw) > 1 << 20:raise ClientError('Слишком большой ответ от Станции.')
+                raw = response.read((16 << 20)+1)
+                if len(raw) > 16 << 20:raise ClientError('Слишком большой ответ от Станции.')
                 result = json.loads(raw)
                 if not isinstance(result, dict):raise ValueError('expected an object')
                 if result.get('error'):raise ClientError(result['error'], result)
@@ -351,6 +354,9 @@ def rows(tracks, current=-1):
 
 
 def human(action, result):
+    if result.get("settings") is not None:
+        print(json.dumps(result["settings"], ensure_ascii=False, indent=2))
+        return
     if 'auth' in result:
         auth = result['auth']
         if not auth['configured']:print('YouTube Music: вход не выполнен. ytm-alice login')
@@ -544,6 +550,25 @@ def yam_main(arguments):
             subprocess.run(ssh+['rm -f '+shlex.quote(temporary)], stdout=subprocess.DEVNULL)
 
 
+def config_request(arguments):
+    if not arguments or arguments == ['get']:
+        return 'config-get', None
+    if len(arguments) < 3 or arguments[0] != 'set':
+        raise ClientError('config get | config set КЛЮЧ ЗНАЧЕНИЕ')
+    key, value = arguments[1], ' '.join(arguments[2:])
+    if key in ('radio', 'shuffle', 'playback_led', 'announce_errors'):
+        if value.lower() not in ('true', 'false'):
+            raise ClientError('нужно true или false')
+        value = value.lower() == 'true'
+    elif key == 'voice_commands':
+        try:value = json.loads(value)
+        except ValueError as error:raise ClientError('нужен JSON-объект голосовых команд') from error
+        if not isinstance(value, dict):raise ClientError('нужен JSON-объект голосовых команд')
+    elif key not in ('web_addr', 'announce_text'):
+        raise ClientError('неизвестная настройка '+key)
+    return 'config-set', {key:value}
+
+
 def main():
     if Path(sys.argv[0]).name == 'yam':return yam_main(sys.argv[1:])
     parser = argparse.ArgumentParser(
@@ -563,7 +588,7 @@ def main():
                         help='login: индекс Google-аккаунта, по умолчанию 0')
     parser.add_argument('action', nargs='?', help='connect URL, play, search, select N, jump N, pause, resume, '
                         'toggle, next, previous, stop, status, queue, ui, login, logout, auth status/check, '
-                        'liked, playlists, playlist ID, announce-on/off, daemon, web status')
+                        'liked, playlists, playlist ID, recommendations, shuffle-on/off, config get/set, announce-on/off, daemon, web status')
     parser.add_argument('query', nargs='*', help='запрос, ссылка или номер трека, начиная с 1')
     args = parser.parse_args()
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -584,6 +609,10 @@ def main():
         action = 'auth-'+args.query[0]
     elif action == 'logout':action = 'auth-logout'
     if action == 'playlist' and not text:parser.error('укажите ID плейлиста из команды playlists')
+    settings = None
+    if action == 'config':
+        try:action, settings = config_request(args.query)
+        except ClientError as error:parser.error(str(error))
     index = None
     if action in ('select', 'jump'):
         try:index = int(text)
@@ -591,7 +620,7 @@ def main():
         if index < 1:parser.error('нужен номер трека, начиная с 1')
     if action == 'connect':
         try:
-            if not text and interactive:text = input('Адрес Станции [http://alice.lan]: ').strip() or 'http://alice.lan'
+            if not text and interactive:text = input('Адрес Станции [http://alice.lan:24721]: ').strip() or 'http://alice.lan:24721'
             if not text:parser.error('укажите адрес: connect http://alice.lan')
             address = save_connection(text)
             print(json.dumps({'url':address}) if args.json else 'Станция: '+address)
@@ -613,7 +642,7 @@ def main():
         if action == 'login':
             credentials = login_credentials(args)
             result = client.request('auth-import', auth=credentials)
-        else:result = client.request(action, text, index)
+        else:result = client.request(action, text, index, settings=settings)
         if args.json:print(json.dumps(result, ensure_ascii=False, indent=2))
         else:human(action, result)
         return 0

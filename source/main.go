@@ -57,22 +57,28 @@ type State struct {
 	Announce    bool        `json:"announce"`
 	LoggedIn    bool        `json:"logged_in"`
 	NativeMedia bool        `json:"native_media"`
+	Radio       bool        `json:"radio"`
+	Shuffle     bool        `json:"shuffle"`
 	Auth        *AuthStatus `json:"auth,omitempty"`
 }
 type request struct {
-	Action     string       `json:"action"`
-	Query      string       `json:"query,omitempty"`
-	Index      int          `json:"index,omitempty"`
-	PositionMS int64        `json:"position_ms,omitempty"`
-	Auth       *Credentials `json:"auth,omitempty"`
+	Action     string         `json:"action"`
+	Query      string         `json:"query,omitempty"`
+	Index      int            `json:"index,omitempty"`
+	PositionMS int64          `json:"position_ms,omitempty"`
+	Auth       *Credentials   `json:"auth,omitempty"`
+	Settings   *SettingsPatch `json:"settings,omitempty"`
 }
 type response struct {
-	State     *State           `json:"state,omitempty"`
-	Tracks    []Track          `json:"tracks,omitempty"`
-	Error     string           `json:"error,omitempty"`
-	Auth      *AuthStatus      `json:"auth,omitempty"`
-	Playlists []Playlist       `json:"playlists,omitempty"`
-	Accounts  []YouTubeAccount `json:"accounts,omitempty"`
+	State      *State           `json:"state,omitempty"`
+	Tracks     []Track          `json:"tracks,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	Auth       *AuthStatus      `json:"auth,omitempty"`
+	Playlists  []Playlist       `json:"playlists,omitempty"`
+	Accounts   []YouTubeAccount `json:"accounts,omitempty"`
+	Settings   *Settings        `json:"settings,omitempty"`
+	WebAddr    string           `json:"web_addr,omitempty"`
+	LEDControl bool             `json:"led_control"`
 }
 type nativePlayer struct {
 	cmd     *exec.Cmd
@@ -114,12 +120,20 @@ type Server struct {
 	speechMu       sync.Mutex
 	closing        bool
 	mediaConnected atomic.Bool
+	settings       *Settings
+	webAddr        string
+	queueOrder     []Track
+	queueCast      bool
+	radioLoad      *radioLoad
+	aliceIdle      atomic.Bool
 }
 
 func (s *Server) snapshot() State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := s.state
+	options := s.settingsLocked()
+	v.Radio, v.Shuffle = options.Radio, options.Shuffle
 	v.Queue = append([]Track(nil), v.Queue...)
 	for i := range v.Queue {
 		if v.Queue[i].ThumbnailURL == "" {
@@ -154,6 +168,10 @@ func (s *Server) stopLocked() {
 }
 func (s *Server) command(ctx context.Context, r request) response {
 	switch r.Action {
+	case "config-get", "config-set":
+		return s.settingsCommand(r)
+	case "shuffle-on", "shuffle-off":
+		return s.shuffleQueue(r.Action == "shuffle-on")
 	case "auth-status", "auth-check", "auth-import", "auth-logout", "auth-discover", "auth-accounts", "auth-select":
 		return s.authCommand(ctx, r)
 	case "playlists":
@@ -194,14 +212,20 @@ func (s *Server) command(ctx context.Context, r request) response {
 		s.latestSearch = append([]Track(nil), t...)
 		s.mu.Unlock()
 		return response{Tracks: t}
-	case "play":
+	case "play", "recommendations":
 		s.mu.Lock()
 		s.stopLocked()
 		s.state.Status = "searching"
 		s.state.Error = ""
 		g := s.generation
 		s.mu.Unlock()
-		tracks, e := s.catalog.lookup(ctx, r.Query)
+		var tracks []Track
+		var e error
+		if r.Action == "recommendations" {
+			tracks, e = s.catalog.recommendations(ctx)
+		} else {
+			tracks, e = s.catalog.lookup(ctx, r.Query)
+		}
 		s.mu.Lock()
 		if s.generation != g {
 			s.mu.Unlock()
@@ -210,18 +234,21 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if e != nil {
 			s.state.Status = "error"
 			s.state.Error = e.Error()
+			s.saveLocked()
 			s.mu.Unlock()
+			s.notifyFailure(g)
 			return response{Error: e.Error()}
 		}
-		s.state.Queue = tracks
-		s.state.Index = 0
+		index := -1
+		lower := strings.ToLower(r.Query)
+		if r.Action == "play" && !isLikedQuery(r.Query) && !strings.HasPrefix(lower, "альбом ") && !strings.HasPrefix(lower, "плейлист ") && !strings.Contains(r.Query, "list=") {
+			index = 0
+		}
+		s.installQueueLocked(tracks, index)
 		s.state.PositionMS = 0
 		s.saveLocked()
 		s.mu.Unlock()
 		s.start(0, true)
-		if !isLikedQuery(r.Query) && !strings.Contains(r.Query, "://") && !strings.HasPrefix(strings.ToLower(r.Query), "альбом ") && !strings.HasPrefix(strings.ToLower(r.Query), "плейлист ") {
-			go s.fillRadio(g+1, tracks[0].ID)
-		}
 	case "select", "jump":
 		s.mu.Lock()
 		i := r.Index - 1
@@ -239,8 +266,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 			s.mu.Unlock()
 			return response{Error: "список изменился; обновите его и выберите трек снова"}
 		}
-		s.state.Queue = append([]Track(nil), tracks...)
-		s.state.Index = i
+		s.installQueueLocked(tracks, i)
 		s.state.PositionMS = 0
 		s.mu.Unlock()
 		s.start(0, true)
@@ -312,7 +338,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		s.saveLocked()
 		s.mu.Unlock()
 	case "voice":
-		a, q, ok := voiceAction(r.Query)
+		a, q, ok := s.voiceAction(r.Query)
 		if !ok {
 			return response{Error: "нет команды YouTube Music"}
 		}
@@ -339,34 +365,6 @@ func (s *Server) command(ctx context.Context, r request) response {
 	v := s.snapshot()
 	return response{State: &v}
 }
-func (s *Server) fillRadio(g uint64, id string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	tracks := s.catalog.radio(ctx, id)
-	if len(tracks) < 2 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.generation != g || len(s.state.Queue) == 0 || s.state.Queue[0].ID != id {
-		return
-	}
-	seen := map[string]bool{}
-	out := append([]Track(nil), s.state.Queue[:s.state.Index+1]...)
-	for _, t := range out {
-		seen[t.ID] = true
-	}
-	for _, t := range tracks {
-		if !seen[t.ID] {
-			out = append(out, t)
-			seen[t.ID] = true
-		}
-	}
-	if len(out) > 1 {
-		s.state.Queue = out
-		s.saveLocked()
-	}
-}
 func (s *Server) start(offset int64, announce bool) {
 	s.startGuarded(offset, announce, 0, nil)
 }
@@ -388,7 +386,9 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 	s.state.PositionMS = offset
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	s.prepCancel = cancel
-	say := announce && s.state.Announce
+	options := s.settingsLocked()
+	say := announce && s.state.Announce && options.AnnounceText != ""
+	announcement := options.AnnounceText
 	s.saveLocked()
 	s.mu.Unlock()
 	go func() {
@@ -397,7 +397,7 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 		if say {
 			go func() {
 				s.speechMu.Lock()
-				if e := speak("Включаю"); e != nil {
+				if e := speak(announcement); e != nil {
 					log.Print("native announcement not confirmed")
 				}
 				s.speechMu.Unlock()
@@ -427,6 +427,7 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 		if err != nil {
 			s.state.Status = "error"
 			s.state.Error = err.Error()
+			s.notifyFailure(g)
 			s.saveLocked()
 			return
 		}
@@ -467,11 +468,13 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			return
 		}
 		go s.monitor(p, g, out, offset)
+		go s.fillRadio(g, t.ID)
 	}()
 }
 func (s *Server) failLocked(message string) {
 	s.state.Status = "error"
 	s.state.Error = message
+	s.notifyFailure(s.generation)
 	s.saveLocked()
 }
 func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset int64) {
@@ -542,17 +545,10 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser, offset in
 		s.mu.Unlock()
 		return
 	}
-	if s.state.Index+1 < len(s.state.Queue) {
-		s.state.Index++
-		s.state.PositionMS = 0
-		s.mu.Unlock()
-		s.start(0, false)
-	} else {
-		s.state.Status = "stopped"
-		s.state.PositionMS = 0
-		s.saveLocked()
-		s.mu.Unlock()
-	}
+	s.state.Status = "buffering"
+	id := s.state.Queue[s.state.Index].ID
+	s.mu.Unlock()
+	s.finishQueue(g, id)
 }
 func (s *Server) relay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" && r.Method != "HEAD" {
@@ -652,6 +648,17 @@ func voiceAction(text string) (string, string, bool) {
 	q := normalize(text)
 	q = strings.TrimSpace(strings.TrimPrefix(q, "алиса "))
 	q = strings.TrimSpace(strings.TrimSuffix(q, " пожалуйста"))
+	for _, phrase := range []string{"включи музыку на ютубе", "поставь музыку на ютубе", "включи музыку в youtube music", "включи рекомендации", "включи рекомендации на ютубе", "включи youtube music", "включи ютуб музыку"} {
+		if q == phrase {
+			return "recommendations", "", true
+		}
+	}
+	if q == "перемешай очередь" || q == "включи перемешивание" {
+		return "shuffle-on", "", true
+	}
+	if q == "выключи перемешивание" {
+		return "shuffle-off", "", true
+	}
 	if q == "поставь мои лайки" || q == "включи мои лайки" || q == "включи понравившиеся" {
 		return "play", "мои лайки", true
 	}
@@ -735,6 +742,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			}
 			ev := decodeAlice(raw)
 			if ev.HasState {
+				s.aliceIdle.Store(ev.State == 0)
 				s.mu.Lock()
 				p := s.player
 				s.mu.Unlock()
@@ -747,7 +755,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				}
 			}
 			q := normalize(ev.Text)
-			a, _, ok := voiceAction(q)
+			a, _, ok := s.voiceAction(q)
 			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
 				continue
 			}
@@ -764,7 +772,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				}
 				continue
 			}
-			if a != "play" {
+			if a != "play" && a != "recommendations" {
 				v := s.snapshot()
 				if v.Status != "playing" && v.Status != "paused" && v.Status != "buffering" && v.Status != "error" {
 					continue
@@ -805,6 +813,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			}(ev.Text)
 		}
 		c.Close()
+		s.aliceIdle.Store(false)
 	}
 }
 func newCatalog() *Catalog {
@@ -843,6 +852,9 @@ func serve() error {
 	os.WriteFile(filepath.Join(runDir(), "pid"), []byte(strconv.Itoa(os.Getpid())), 0600)
 	defer os.Remove(filepath.Join(runDir(), "pid"))
 	s := &Server{state: State{Version: version, Status: "stopped", Announce: true, Queue: []Track{}}, catalog: newCatalog()}
+	if err := s.loadSettings(); err != nil {
+		return err
+	}
 	if err := s.catalog.loadAuth(); err != nil {
 		log.Print(err)
 	}
@@ -870,6 +882,7 @@ func serve() error {
 	go s.voiceLoop(ctx)
 	go s.mediaLoop(ctx)
 	go s.castLoop(ctx)
+	go s.indicatorLoop(ctx)
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -904,7 +917,7 @@ func call(r request) (response, error) {
 		return response{}, e
 	}
 	var out response
-	e = json.NewDecoder(io.LimitReader(c, 1<<20)).Decode(&out)
+	e = json.NewDecoder(io.LimitReader(c, maxControlResponseBytes)).Decode(&out)
 	return out, e
 }
 func printResponse(out response, asJSON bool) {
@@ -914,6 +927,11 @@ func printResponse(out response, asJSON bool) {
 	}
 	if out.Error != "" {
 		fmt.Fprintln(os.Stderr, out.Error)
+		return
+	}
+	if out.Settings != nil {
+		raw, _ := json.MarshalIndent(out.Settings, "", "  ")
+		fmt.Println(string(raw))
 		return
 	}
 	if out.Auth != nil {
@@ -962,7 +980,11 @@ func help() {
   status | queue             состояние и очередь
   pause | resume | toggle | stop  управление воспроизведением
   next | previous            следующий / предыдущий трек
-  announce-on | announce-off  фраза Алисы «Включаю»
+  announce-on | announce-off  фраза Алисы перед музыкой
+  recommendations            персональные рекомендации (нужен вход)
+  shuffle-on | shuffle-off   перемешивание очереди
+  config get                 постоянные настройки
+  config set КЛЮЧ ЗНАЧЕНИЕ    изменить настройку; порт — после перезапуска
   ui                         интерактивное меню
   --json КОМАНДА              машиночитаемый ответ
 
@@ -1045,6 +1067,22 @@ func main() {
 		return
 	}
 	switch args[0] {
+	case "config":
+		r, err := configRequest(args[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		out, err := call(r)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		printResponse(out, asJSON)
+		if out.Error != "" {
+			os.Exit(1)
+		}
+		return
 	case "web":
 		if len(args) != 2 {
 			fmt.Fprintln(os.Stderr, "web status")
@@ -1120,6 +1158,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 		defer cancel()
 		c := newCatalog()
+		if err := c.loadAuth(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		t, e := c.lookup(ctx, strings.Join(args[1:], " "))
 		if e != nil {
 			fmt.Fprintln(os.Stderr, e)

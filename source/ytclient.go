@@ -29,7 +29,8 @@ const (
 )
 
 type ytPageCache struct {
-	base http.RoundTripper
+	catalog *Catalog
+	base    http.RoundTripper
 
 	mu        sync.Mutex
 	player    map[string][]byte // video id -> compact player response
@@ -80,7 +81,7 @@ func (t netLogTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (p *ytPageCache) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" || !isYouTubeHost(req.URL.Hostname()) {
-		return p.base.RoundTrip(req)
+		return p.network(req)
 	}
 	switch {
 	case req.Method == http.MethodPost && req.URL.Path == "/youtubei/v1/player":
@@ -106,7 +107,7 @@ func (p *ytPageCache) RoundTrip(req *http.Request) (*http.Response, error) {
 		if cached != nil && fresh {
 			return syntheticResponse(req, cached), nil
 		}
-		resp, err := p.base.RoundTrip(req)
+		resp, err := p.network(req)
 		if err != nil || resp.StatusCode != http.StatusOK {
 			return resp, err
 		}
@@ -121,7 +122,7 @@ func (p *ytPageCache) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		return resp, nil
 	}
-	return p.base.RoundTrip(req)
+	return p.network(req)
 }
 
 func (p *ytPageCache) playerCall(req *http.Request) (*http.Response, error) {
@@ -136,7 +137,7 @@ func (p *ytPageCache) playerCall(req *http.Request) (*http.Response, error) {
 			id = in.VideoID
 		}
 	}
-	resp, err := p.base.RoundTrip(req)
+	resp, err := p.network(req)
 	if err != nil || resp.StatusCode != http.StatusOK || !videoID.MatchString(id) {
 		return resp, err
 	}
@@ -168,7 +169,9 @@ func (c *Catalog) withYT(fn func(*yt.Client) error) error {
 	defer c.ytMu.Unlock()
 	if c.ytClient == nil || time.Since(c.ytCreated) > ytClientMaxAge {
 		h := *c.http
-		h.Transport = newYTPageCache(c.http.Transport)
+		pages := newYTPageCache(c.http.Transport)
+		pages.catalog = c
+		h.Transport = pages
 		c.ytClient = &yt.Client{HTTPClient: &h, MaxRoutines: 1}
 		c.ytCreated = time.Now()
 	}
