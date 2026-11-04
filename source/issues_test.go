@@ -285,3 +285,23 @@ func TestNativeCLIEmptyAliasesSurviveRPCSerialization(t *testing.T) {
 		t.Fatal("CLI could not remove voice aliases", result.Error)
 	}
 }
+
+func TestWebReportsBoundPortUntilRestart(t *testing.T) {
+	t.Setenv("YTM_ALICE_DATA", t.TempDir())
+	t.Setenv("YTM_ALICE_WEB_ADDR", "127.0.0.1:0")
+	s := &Server{catalog: newCatalog()}
+	closeWeb, err := s.startWeb()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeWeb()
+	before := s.settingsCommand(request{Action: "config-get"}).WebAddr
+	if before == "127.0.0.1:0" {
+		t.Fatal("actual port not reported")
+	}
+	next := ":34567"
+	out := s.settingsCommand(request{Action: "config-set", Settings: &SettingsPatch{WebAddr: &next}})
+	if out.Error != "" || out.WebAddr != before || out.Settings.WebAddr != next {
+		t.Fatal("pending port advertised as running", out)
+	}
+}

@@ -192,7 +192,11 @@ func (s *Server) settingsCommand(r request) response {
 		}
 		s.settings = &value
 	}
-	return response{Settings: &value, WebAddr: effectiveWebAddr(value), LEDControl: len(playbackLEDPaths("/sys/class/leds")) > 0}
+	address := s.webAddr
+	if address == "" {
+		address = effectiveWebAddr(value)
+	}
+	return response{Settings: &value, WebAddr: address, LEDControl: len(playbackLEDPaths("/sys/class/leds")) > 0}
 }
 
 func effectiveWebAddr(settings Settings) string {

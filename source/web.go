@@ -214,12 +214,23 @@ func ptrState(s State) *State { return &s }
 func (s *Server) startWeb() (func(), error) {
 	address := effectiveWebAddr(s.getSettings())
 	if address == "off" {
+		s.mu.Lock()
+		s.webAddr = "off"
+		s.mu.Unlock()
 		return func() {}, nil
 	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, err
 	}
+	host, port, _ := net.SplitHostPort(address)
+	if port == "0" {
+		_, port, _ = net.SplitHostPort(listener.Addr().String())
+		address = net.JoinHostPort(host, port)
+	}
+	s.mu.Lock()
+	s.webAddr = address
+	s.mu.Unlock()
 	server := &http.Server{Handler: newWebPanel(s), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 50 * time.Second, IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192}
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -120,6 +120,7 @@ type Server struct {
 	closing        bool
 	mediaConnected atomic.Bool
 	settings       *Settings
+	webAddr        string
 	queueOrder     []Track
 	queueCast      bool
 	radioLoad      *radioLoad
