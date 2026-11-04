@@ -448,11 +448,22 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 		return s, nil
 	}
 	client := yt.Client{HTTPClient: c.http, MaxRoutines: 1}
-	v, err := client.GetVideoContext(ctx, id)
-	musicFallback := err != nil
+	var v *yt.Video
+	var err, musicErr error
+	// Use the connected Music profile first. A public client can report OK
+	// while issuing a CDN URL that is forbidden for this session or region.
+	if c.credentials() != nil {
+		v, musicErr = c.musicVideo(ctx, id)
+	}
+	if v == nil {
+		v, err = client.GetVideoContext(ctx, id)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return streamInfo{}, resolverError(ctx.Err())
+		}
+		if musicErr != nil {
+			return streamInfo{}, musicErr
 		}
 		v, err = c.musicVideo(ctx, id)
 		if err != nil {
@@ -474,14 +485,9 @@ func (c *Catalog) resolve(ctx context.Context, id string) (streamInfo, error) {
 		parsed, parseErr := url.Parse(link)
 		var e error
 		if link == "" || parseErr != nil || parsed.Query().Get("n") != "" {
-			if c.playerSource != "" || musicFallback {
-				link, e = c.decipherURL(ctx, id, f)
-			} else {
-				link, e = client.GetStreamURLContext(ctx, v, &f)
-				if e != nil {
-					link, e = c.decipherURL(ctx, id, f)
-				}
-			}
+			// Legacy decoding can return a malformed n/signature without an
+			// error. Use the same current decoder for public and signed-in URLs.
+			link, e = c.decipherURL(ctx, id, f)
 		}
 		if e != nil {
 			streamErr = e

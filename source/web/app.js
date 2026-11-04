@@ -181,7 +181,8 @@ function showView(view) {
   if(view==='search') $('search-input').focus();
   if(view==='liked'&&!loadedLiked) perform(null,loadLiked);
   if(view==='playlists'&&!loadedPlaylists) perform(null,loadPlaylists);
-  if(view==='settings'){perform(null,loadSettings);if(state?.logged_in)perform(null,()=>command('auth-check'));}
+  if(view==='settings'||view==='commands')perform(null,loadSettings);
+  if(view==='settings'&&state?.logged_in)perform(null,()=>command('auth-check'));
 }
 async function poll() {
   if(document.hidden || pending) {schedulePoll();return;}
@@ -258,13 +259,20 @@ async function loadSettings(){
  $('voice-aliases').replaceChildren();for(const [phrase,action] of Object.entries(settings.voice_commands||{}))addVoiceAlias(phrase,action);
 }
 $('add-voice-alias').onclick=()=>{if($('voice-aliases').children.length<40)addVoiceAlias();};
+$('voice-commands-form').addEventListener('submit',event=>{
+ event.preventDefault();perform($('save-voice-commands'),async()=>{
+  if(!settings)throw new Error('Команды ещё загружаются.');
+  const aliases={};for(const row of $('voice-aliases').children){const phrase=row.querySelector('input').value.trim().toLowerCase();if(!phrase)continue;if(Object.hasOwn(aliases,phrase))throw new Error('Команды не должны повторяться.');aliases[phrase]=row.querySelector('select').value;}
+  const result=await command('config-set',{settings:{voice_commands:aliases}});settings=result.settings;
+  notice('Голосовые команды сохранены.',true);
+ });
+});
 $('settings-form').addEventListener('submit',event=>{
  event.preventDefault();perform($('save-settings'),async()=>{
   if(!settings)throw new Error('Настройки ещё загружаются.');
-  const aliases={};for(const row of $('voice-aliases').children){const phrase=row.querySelector('input').value.trim().toLowerCase();if(!phrase)continue;if(Object.hasOwn(aliases,phrase))throw new Error('Команды не должны повторяться.');aliases[phrase]=row.querySelector('select').value;}
   const port=Number($('web-port').value);if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Укажи порт от 1 до 65535.');
   const host=settings.web_addr==='off'?'':settings.web_addr.slice(0,settings.web_addr.lastIndexOf(':'));
-  const next={web_addr:host+':'+port,radio:$('radio').checked,shuffle:$('shuffle').checked,announce_text:$('announce-text').value,announce_errors:$('announce-errors').checked,playback_led:$('playback-led').checked,voice_commands:aliases};
+  const next={web_addr:host+':'+port,radio:$('radio').checked,shuffle:$('shuffle').checked,announce_text:$('announce-text').value,announce_errors:$('announce-errors').checked,playback_led:$('playback-led').checked};
   if($('playback-led').disabled)delete next.playback_led;
   const oldPort=settings.web_addr;const oldShuffle=state?.shuffle;
   const result=await command('config-set',{settings:next});settings=result.settings;
@@ -278,7 +286,7 @@ document.addEventListener('visibilitychange',()=>{clearTimeout(refreshTimer);if(
 async function init(){
  try {
   await request('/api/state');
-  if(location.hash==='#settings')showView('settings');
+  if(titles[location.hash.slice(1)])showView(location.hash.slice(1));
  }catch(error){connected(false);notice(error.message||'Не удалось подключиться к колонке.');schedulePoll();return;}
  if(state?.logged_in)await perform(null,()=>command('auth-check'));else renderAuth({configured:false});
  schedulePoll();

@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -68,5 +72,39 @@ func TestNativePreprocessedSignatureAndNChallenges(t *testing.T) {
 		if str(get(result, "responses", 0, "data", "abcdef")) != "fedcba" || str(get(result, "responses", 1, "data", "12345")) != "12345-decoded" {
 			t.Fatal("incorrect challenge transformation")
 		}
+	}
+}
+
+func TestNativePublicStreamUsesModernNTransform(t *testing.T) {
+	if os.Getenv("YTM_ALICE_RESOLVER") == "" {
+		t.Skip("native resolver not available")
+	}
+	c := newCatalog()
+	player := map[string]any{"playabilityStatus": map[string]any{"status": "OK"}, "streamingData": map[string]any{"adaptiveFormats": []any{map[string]any{"itag": 140, "url": "https://test.googlevideo.com/audio?n=12345", "mimeType": "audio/mp4", "audioChannels": 2, "contentLength": "1024"}}}}
+	raw, _ := json.Marshal(player)
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "music.youtube.com" {
+			t.Fatal("public metadata unexpectedly required a session")
+		}
+		var content string
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/embed/"):
+			content = `<script src="/s/player/test/player_ias.vflset/en_US/base.js"></script>`
+		case strings.HasPrefix(r.URL.Path, "/s/player/"):
+			content = fixtureURLPlayer
+		case r.URL.Path == "/watch":
+			content = "var ytInitialPlayerResponse=" + string(raw) + ";"
+		default:
+			content = string(raw)
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(content))}, nil
+	})}
+	stream, err := c.resolve(context.Background(), "abcdefghijk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := url.Parse(stream.url)
+	if err != nil || link.Query().Get("n") != "12345-decoded" {
+		t.Fatal("public n challenge bypassed current decoder")
 	}
 }

@@ -38,6 +38,10 @@
  <section id="view-commands" class="view" hidden>
   <div class="commands-intro"><h2>Скажи «Алиса» и команду</h2><p>Для запуска YouTube Music называй трек или добавляй «на ютубе».</p></div>
   <div class="commands-grid">
+  <article class="panel command-card voice-commands-editor">   <h3>Свои голосовые команды</h3><form id="voice-commands-form"><p class="field-help">Для поиска добавь {query} в конце фразы, например «сыграй {query}». Имя «Алиса» вводить не нужно.</p>
+   <div id="voice-aliases"></div><button id="add-voice-alias" class="secondary-button" type="button">Добавить команду</button>
+   <div class="button-row"><button id="save-voice-commands" class="primary-button" type="submit">Сохранить команды</button></div>
+  </form></article>
    <article class="panel command-card"><h3>Включить музыку</h3><dl class="command-list">
     <div><dt>Трек или исполнитель</dt><dd>«Алиса, поставь Sewerslvt Newlove»</dd></div>
     <div><dt>Поиск в YouTube Music</dt><dd>«Алиса, включи на ютубе джаз»</dd></div>
@@ -69,8 +73,6 @@
    <label class="toggle-label" for="playback-led"><span>Подсветка во время музыки<small id="led-help">Индикация диалога Алисы сохраняется</small></span><input id="playback-led" type="checkbox" role="switch"></label>
    <label class="field-label" for="announce-text">Фраза перед музыкой</label><input id="announce-text" type="text" maxlength="200" placeholder="Включаю">
    <label class="field-label" for="web-port">Порт панели</label><input id="web-port" type="number" min="1" max="65535" required><p class="field-help">Новый порт применяется после перезапуска сервиса. Затем добавь его к адресу Станции.</p>
-   <h3>Свои голосовые команды</h3><p class="field-help">Для поиска добавь {query} в конце фразы, например «сыграй {query}». Имя «Алиса» вводить не нужно.</p>
-   <div id="voice-aliases"></div><button id="add-voice-alias" class="secondary-button" type="button">Добавить команду</button>
    <div class="button-row"><button id="save-settings" class="primary-button" type="submit">Сохранить настройки</button></div>
   </form></article></div>
  </section>

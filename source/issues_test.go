@@ -166,9 +166,10 @@ func TestPlaylistDoesNotFollowEndlessSuggestions(t *testing.T) {
 func TestExplicitTrackUsesMusicSessionOnly(t *testing.T) {
 	c := newCatalog()
 	c.auth = &Credentials{Cookie: "SAPISID=fixture-only", AuthUser: "0"}
-	musicCalls := 0
+	musicCalls, publicCalls := 0, 0
 	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "music.youtube.com" {
+			publicCalls++
 			if strings.Contains(r.Header.Get("Cookie"), "fixture-only") || r.Header.Get("Authorization") != "" {
 				t.Fatal("session leaked to public resolver")
 			}
@@ -186,7 +187,7 @@ func TestExplicitTrackUsesMusicSessionOnly(t *testing.T) {
 		return jsonReply(map[string]any{"playabilityStatus": map[string]any{"status": "OK"}, "streamingData": map[string]any{"adaptiveFormats": []any{map[string]any{"itag": 140, "url": "https://test.googlevideo.com/audio", "mimeType": "audio/mp4", "audioChannels": 2, "contentLength": "1024"}}}}), nil
 	})}
 	stream, err := c.resolve(context.Background(), "abcdefghijk")
-	if err != nil || stream.length != 1024 || musicCalls != 1 {
+	if err != nil || stream.length != 1024 || musicCalls != 1 || publicCalls != 0 {
 		t.Fatalf("fallback failed: %v, %+v, calls=%d", err, stream, musicCalls)
 	}
 }

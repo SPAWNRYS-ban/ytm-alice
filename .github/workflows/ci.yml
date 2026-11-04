@@ -54,7 +54,7 @@ jobs:
           python3 native/fetch-quickjs.py
           cc -O2 -D_GNU_SOURCE -Inative/.build native/resolver.c native/.build/quickjs-amalgam.c -lm -ldl -pthread -o /tmp/ytm-alice-resolver
           python3 scripts/check-resolver.py /tmp/ytm-alice-resolver
-          YTM_ALICE_RESOLVER=/tmp/ytm-alice-resolver go test -run TestNativePreprocessed ./...
+          YTM_ALICE_RESOLVER=/tmp/ytm-alice-resolver go test -run 'TestNative(Preprocessed|Public)' ./...
       - name: Browser cookie parser
         run: node --test test_web_cookies.mjs
 
