@@ -189,6 +189,7 @@ func (p *webPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := map[string]bool{"config-get": true, "config-set": true, "recommendations": true, "shuffle-on": true, "shuffle-off": true, "status": true, "queue": true, "search": true, "liked": true, "play": true, "select": true, "jump": true, "playlists": true, "playlist": true, "next": true, "previous": true, "pause": true, "resume": true, "toggle": true, "stop": true, "announce-on": true, "announce-off": true, "auth-status": true, "auth-check": true, "auth-import": true, "auth-discover": true, "auth-accounts": true, "auth-select": true, "auth-logout": true}
+	allowed["seek"] = true
 	if !allowed[command.Action] || len([]rune(command.Query)) > 500 {
 		webError(w, 400, "команда панели не поддерживается")
 		return

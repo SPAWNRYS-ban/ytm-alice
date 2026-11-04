@@ -35,6 +35,10 @@ func (c *Catalog) noteRateLimit() error {
 func (c *Catalog) clearRateLimit() {
 	c.limitMu.Lock()
 	defer c.limitMu.Unlock()
+	// Another in-flight metadata request may just have observed a 429.
+	if time.Now().Before(c.limitedUntil) {
+		return
+	}
 	c.limitBackoff = 0
 	c.limitedUntil = time.Time{}
 }

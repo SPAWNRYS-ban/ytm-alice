@@ -2,8 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -91,5 +99,80 @@ func TestTfdtWriterShiftsFragments(t *testing.T) {
 	want := append(fragment(0, "audio-1"), fragment(441000, "audio-2")...)
 	if !bytes.Equal(out, want) {
 		t.Fatalf("tfdt not shifted")
+	}
+}
+
+func TestSeekRelayRangesMatchRebasedVirtualFile(t *testing.T) {
+	f1, f2 := fragment(441000, "audio-1"), fragment(882000, "audio-2")
+	base := int64(5000)
+	data := append(make([]byte, base), append(f1, f2...)...)
+	want := append([]byte("init"), append(fragment(0, "audio-1"), fragment(441000, "audio-2")...)...)
+	s, p := streamFixture(data)
+	p.window = &seekWindow{head: []byte("init"), fragStart: base, startMS: 10000, startTicks: 441000, frags: []int64{base, base + int64(len(f1))}}
+	s.catalog.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		start, end := streamSpan(t, r)
+		return streamResponse(data[start:end+1], start, end, len(data)), nil
+	})
+	// Include ranges that start/end within tfdt, not only fragment boundaries.
+	for _, span := range []string{"", "bytes=0-2", "bytes=50-63", "bytes=63-65", "bytes=65-", "bytes=-17", fmt.Sprintf("bytes=%d-%d", 4+len(f1)+50, 4+len(f1)+63)} {
+		t.Run(span, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "http://127.0.0.1/audio/test", nil)
+			r.Header.Set("Range", span)
+			out := httptest.NewRecorder()
+			s.relay(out, r)
+			start, end, err := byteRange(span, int64(len(want)))
+			if err != nil || !bytes.Equal(out.Body.Bytes(), want[start:end+1]) || out.Header().Get("Content-Length") != fmt.Sprint(end-start+1) {
+				t.Fatalf("inconsistent virtual range %s: %x; want %x", span, out.Body.Bytes(), want[start:end+1])
+			}
+		})
+	}
+}
+
+func TestSeekPositionDoesNotJumpBackAfterPassingOffset(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	in, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &nativePlayer{cmd: cmd, in: in, window: &seekWindow{startMS: 60000}}
+	s := &Server{player: p, closing: true}
+	s.monitor(p, 0, io.NopCloser(strings.NewReader("{\"event\":\"position\",\"position_ms\":80000}\n")))
+	if s.snapshot().PositionMS != 140000 {
+		t.Fatal("seek offset lost after 80 seconds", s.snapshot().PositionMS)
+	}
+}
+
+func TestSeekWithoutIndexKeepsCurrentPlayer(t *testing.T) {
+	p := &nativePlayer{}
+	s := &Server{player: p, state: State{Queue: []Track{{ID: "abcdefghijk"}}, Status: "playing", PositionMS: 15000}}
+	r := s.command(context.Background(), request{Action: "seek", PositionMS: 60000})
+	if r.Error == "" || s.player != p || s.state.PositionMS != 15000 || s.state.Status != "playing" {
+		t.Fatal("unsupported seek interrupted current playback")
+	}
+}
+
+func TestSeekIndexNetworkErrorDoesNotExposeSignedURL(t *testing.T) {
+	c := newCatalog()
+	c.http.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("https://private.googlevideo.com/?signature=secret")
+	})
+	_, err := c.seekWindow(context.Background(), streamInfo{url: "https://test.googlevideo.com/audio?signature=secret", initEnd: 631, indexStart: 632, indexEnd: 700, length: 2000}, 60000)
+	if err == nil || strings.Contains(err.Error(), "signature") || strings.Contains(err.Error(), "secret") {
+		t.Fatal("index failure leaked signed URL", err)
+	}
+}
+
+func TestParseSidxRejectsUnsupportedOrOverflowingHeader(t *testing.T) {
+	b := buildSidx(44100, 0, [][2]uint32{{100, 441000}})
+	b[8] = 2
+	if _, err := parseSidx(b, 0); err == nil {
+		t.Fatal("unsupported index version accepted")
+	}
+	b[8] = 0
+	if _, err := parseSidx(b, 1<<63-10); err == nil {
+		t.Fatal("overflowing fragment offset accepted")
 	}
 }

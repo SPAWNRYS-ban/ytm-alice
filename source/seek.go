@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 )
@@ -48,6 +49,9 @@ func parseSidx(b []byte, boxStart int64) ([]sidxRef, error) {
 	}
 	b = b[:size]
 	version := b[8]
+	if version > 1 || boxStart < 0 {
+		return nil, errors.New("unsupported sidx header")
+	}
 	p := 12 + 4 // full box header + reference_ID
 	timescale := int64(binary.BigEndian.Uint32(b[p:]))
 	p += 4
@@ -63,6 +67,9 @@ func parseSidx(b []byte, boxStart int64) ([]sidxRef, error) {
 		ept = int64(binary.BigEndian.Uint64(b[p:]))
 		first = int64(binary.BigEndian.Uint64(b[p+8:]))
 		p += 16
+	}
+	if ept < 0 || first < 0 || first > math.MaxInt64-size || boxStart > math.MaxInt64-size-first {
+		return nil, errors.New("sidx offset overflow")
 	}
 	p += 2 // reserved
 	if timescale <= 0 || len(b) < p+2 {
@@ -84,6 +91,9 @@ func parseSidx(b []byte, boxStart int64) ([]sidxRef, error) {
 			return nil, errors.New("hierarchical sidx is not supported")
 		}
 		rs := int64(word & 0x7fffffff)
+		if rs == 0 || dur == 0 || offset > math.MaxInt64-rs || t > math.MaxInt64/1000-dur {
+			return nil, errors.New("invalid sidx reference")
+		}
 		refs = append(refs, sidxRef{offset: offset, size: rs, startMS: t * 1000 / timescale, durationMS: dur * 1000 / timescale, ticks: uint64(t)})
 		offset += rs
 		t += dur
@@ -94,18 +104,18 @@ func parseSidx(b []byte, boxStart int64) ([]sidxRef, error) {
 // seekWindow fetches the init segment and the index in one small range request
 // and picks the fragment that contains targetMS.
 func (c *Catalog) seekWindow(ctx context.Context, src streamInfo, targetMS int64) (*seekWindow, error) {
-	if src.initEnd <= 0 || src.indexStart != src.initEnd+1 || src.indexEnd <= src.indexStart || src.indexEnd >= src.length || src.indexEnd > 1<<20 {
+	if !src.hasSeekIndex() {
 		return nil, errors.New("stream has no usable index")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.url, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid index URL")
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", src.indexEnd))
 	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("index request: " + streamErrorClass(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusPartialContent {
@@ -121,8 +131,11 @@ func (c *Catalog) seekWindow(ctx context.Context, src streamInfo, targetMS int64
 	}
 	pick := refs[0]
 	for _, r := range refs {
+		if r.offset <= src.indexEnd || r.offset >= src.length || r.size > src.length-r.offset {
+			return nil, errors.New("index points outside the stream")
+		}
 		if r.startMS > targetMS {
-			break
+			continue
 		}
 		pick = r
 	}
@@ -136,6 +149,10 @@ func (c *Catalog) seekWindow(ctx context.Context, src streamInfo, targetMS int64
 		}
 	}
 	return win, nil
+}
+
+func (src streamInfo) hasSeekIndex() bool {
+	return src.initEnd > 0 && src.indexStart == src.initEnd+1 && src.indexEnd > src.indexStart && src.indexEnd < src.length && src.indexEnd <= 1<<20
 }
 
 // relayWindow serves the virtual file: init segment from memory, fragments
@@ -169,9 +186,49 @@ func (s *Server) relayWindow(w http.ResponseWriter, r *http.Request, p *nativePl
 	}
 	realStart := win.fragStart + max(start-head, 0)
 	realEnd := win.fragStart + (end - head)
-	pw := &tfdtWriter{ResponseWriter: w, pos: realStart, frags: win.frags, shift: win.startTicks}
-	s.relayAudioRange(pw, r, p, src, realStart, realEnd, true)
+	// A byte range can split a moof (including the tfdt field). Read its whole
+	// bounded prefix for timestamp patching, then emit only the requested slice.
+	fetchStart, fetchEnd := realStart, realEnd
+	for i, f := range win.frags {
+		if f <= realStart && realStart-f < maxMoof {
+			fetchStart = f
+		}
+		if f <= realEnd && realEnd-f < maxMoof {
+			last := src.length - 1
+			if i+1 < len(win.frags) {
+				last = win.frags[i+1] - 1
+			}
+			fetchEnd = min(f+maxMoof-1, last)
+		}
+	}
+	slice := &tfdtSliceWriter{ResponseWriter: w, skip: realStart - fetchStart, remaining: realEnd - realStart + 1}
+	pw := &tfdtWriter{ResponseWriter: slice, pos: fetchStart, frags: win.frags, shift: win.startTicks}
+	s.relayAudioRange(pw, r, p, src, fetchStart, fetchEnd, true)
 	pw.flush()
+}
+
+type tfdtSliceWriter struct {
+	http.ResponseWriter
+	skip, remaining int64
+}
+
+func (w *tfdtSliceWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	drop := min(w.skip, int64(n))
+	w.skip -= drop
+	p = p[drop:]
+	keep := min(w.remaining, int64(len(p)))
+	if keep > 0 {
+		written, err := w.ResponseWriter.Write(p[:keep])
+		w.remaining -= int64(written)
+		if err != nil {
+			return 0, err
+		}
+		if int64(written) != keep {
+			return 0, io.ErrShortWrite
+		}
+	}
+	return n, nil
 }
 
 // tfdtWriter shifts baseMediaDecodeTime in every served fragment so the virtual

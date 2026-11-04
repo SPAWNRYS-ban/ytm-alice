@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -820,7 +821,7 @@ func (c *castReceiver) handle(ctx context.Context, m castMessage) {
 	case "next", "previous":
 		go c.s.command(ctx, request{Action: m.Name})
 	case "seekTo":
-		if f, err := strconv.ParseFloat(pstr(m.Payload, "newTime"), 64); err == nil {
+		if f, err := strconv.ParseFloat(pstr(m.Payload, "newTime"), 64); err == nil && !math.IsNaN(f) && f >= 0 && f <= 7200 {
 			ms := int64(f * 1000)
 			// Acknowledge at once: the sender waits for the new position.
 			loading := c.stateChange(st)
@@ -945,12 +946,5 @@ func (s *Server) castUpdateQueue(tracks []Track) {
 }
 
 func (s *Server) castSeek(ms int64) {
-	s.mu.Lock()
-	if len(s.state.Queue) == 0 {
-		s.mu.Unlock()
-		return
-	}
-	s.stopLocked()
-	s.mu.Unlock()
-	s.start(ms, false)
+	s.command(context.Background(), request{Action: "seek", PositionMS: ms})
 }

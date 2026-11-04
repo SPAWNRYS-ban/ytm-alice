@@ -41,6 +41,22 @@ def server(responder):
 
 
 class HTTPTests(unittest.TestCase):
+    def test_seek_cli_converts_seconds_to_milliseconds_over_http(self):
+        received = []
+        def reply(handler):
+            received.append(json.loads(handler.payload))
+            handler.send_response(200)
+            handler.end_headers()
+            handler.wfile.write(b'{"state":{"status":"buffering","position_ms":60250}}')
+        with server(reply) as url:
+            result = subprocess.run([sys.executable, str(ROOT/'remote-cli.py'), '--url', url, '--json', 'seek', '60.25'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(received[0]['action'], 'seek')
+        self.assertEqual(received[0]['position_ms'], 60250)
+        for value in ('nan', 'inf', '-1', '7201', 'bad'):
+            result = subprocess.run([sys.executable, str(ROOT/'remote-cli.py'), 'seek', value], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, value)
+
     def test_commands_and_auth_cross_the_json_body_boundary(self):
         received = []
         def reply(handler):
