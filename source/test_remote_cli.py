@@ -1,4 +1,6 @@
 """Exercise real line transport and the native-to-terminal state boundary."""
+import contextlib
+import io
 import importlib.util
 import argparse
 import sqlite3
@@ -98,6 +100,28 @@ print(json.dumps({'auth':{'configured':True,'checked':True,'valid':True}}),flush
         self.assertTrue(result['auth']['valid'])
         self.assertNotIn('test-only', str(result))
         self.assertFalse(any('test-only' in arg for arg in client.process.args))
+
+
+class TVLoginTests(unittest.TestCase):
+    class Station:
+        def __init__(self, statuses):
+            self.calls, self.statuses = [], list(statuses)
+        def request(self, action, *args, **kwargs):
+            self.calls.append(action)
+            if action == 'auth-tv-start':
+                return {'tv_login': {'status': 'waiting', 'user_code': 'ABC-DEF', 'verification_url': 'https://www.google.com/device'}}
+            return self.statuses.pop(0)
+
+    def test_waits_for_confirmation_and_reports_failure(self):
+        done = {'tv_login': {'status': 'done'}, 'auth': {'configured': True, 'checked': True, 'valid': True}}
+        station = self.Station([{'tv_login': {'status': 'waiting'}}, done])
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cli.tv_login(station, wait=0), done)
+        self.assertIn('ABC-DEF', out.getvalue())
+        self.assertEqual(station.calls, ['auth-tv-start', 'auth-tv-status', 'auth-tv-status'])
+        failed = self.Station([{'tv_login': {'status': 'failed', 'error': 'код входа истёк; запроси новый'}}])
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(cli.ClientError, 'истёк'):
+            cli.tv_login(failed, wait=0)
 
 
 if __name__ == '__main__':

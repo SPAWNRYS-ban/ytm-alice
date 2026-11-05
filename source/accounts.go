@@ -172,6 +172,10 @@ func (c *Catalog) authStatus() AuthStatus {
 	}
 	status := c.authResult
 	status.Configured = true
+	status.Method = "cookies"
+	if c.auth.isTV() {
+		status.Method = "tv"
+	}
 	return status
 }
 func (c *Catalog) setAuthResult(auth *Credentials, account *YouTubeAccount, err error) {

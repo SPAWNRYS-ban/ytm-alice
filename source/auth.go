@@ -36,6 +36,7 @@ type AuthStatus struct {
 	Checked    bool            `json:"checked"`
 	Valid      bool            `json:"valid"`
 	Expired    bool            `json:"expired,omitempty"`
+	Method     string          `json:"method,omitempty"` // cookies or tv
 	Account    *YouTubeAccount `json:"account,omitempty"`
 }
 
@@ -249,7 +250,25 @@ func (s *Server) authCommand(ctx context.Context, r request) response {
 		}
 		status := s.catalog.authStatus()
 		return response{Auth: &status}
+	case "auth-tv-start":
+		login, err := s.catalog.startTVLogin(ctx)
+		if err != nil {
+			return response{Error: err.Error()}
+		}
+		return response{TVLogin: &login}
+	case "auth-tv-status":
+		login := s.catalog.tvLoginStatus()
+		out := response{TVLogin: &login}
+		if login.Status == "done" {
+			status := s.catalog.authStatus()
+			out.Auth = &status
+		}
+		return out
+	case "auth-tv-cancel":
+		s.catalog.cancelTVLogin()
+		return response{TVLogin: &TVLoginState{Status: "idle"}}
 	case "auth-logout":
+		s.catalog.cancelTVLogin()
 		if err := s.catalog.logout(); err != nil {
 			return response{Error: err.Error()}
 		}

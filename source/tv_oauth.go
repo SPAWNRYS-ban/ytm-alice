@@ -51,6 +51,7 @@ func (e expiredError) Is(target error) bool { return target == errSessionExpired
 
 var errTVExpired error = expiredError("Вход через YouTube TV отозван или истёк. Войди заново по коду в настройках.")
 var errTVPending = errors.New("код ещё не подтверждён")
+var errTVNetwork = errors.New("YouTube TV: network unavailable")
 
 var (
 	tvBaseScript  = regexp.MustCompile(`<script[^>]*\bid="base-js"[^>]*\bsrc="(/s/[^"]+)"|<script[^>]*\bsrc="(/s/[^"]+)"[^>]*\bid="base-js"`)
@@ -146,7 +147,7 @@ func (c *Catalog) tvOAuth(ctx context.Context, path string, form url.Values, out
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, errors.New("YouTube TV: network unavailable")
+		return 0, errTVNetwork
 	}
 	defer resp.Body.Close()
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(out); err != nil {

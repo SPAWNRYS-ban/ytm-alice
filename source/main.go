@@ -77,6 +77,7 @@ type response struct {
 	Auth       *AuthStatus      `json:"auth,omitempty"`
 	Playlists  []Playlist       `json:"playlists,omitempty"`
 	Accounts   []YouTubeAccount `json:"accounts,omitempty"`
+	TVLogin    *TVLoginState    `json:"tv_login,omitempty"`
 	Settings   *Settings        `json:"settings,omitempty"`
 	WebAddr    string           `json:"web_addr,omitempty"`
 	LEDControl bool             `json:"led_control"`
@@ -173,7 +174,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		return s.settingsCommand(r)
 	case "shuffle-on", "shuffle-off":
 		return s.shuffleQueue(r.Action == "shuffle-on")
-	case "auth-status", "auth-check", "auth-import", "auth-logout", "auth-discover", "auth-accounts", "auth-select":
+	case "auth-status", "auth-check", "auth-import", "auth-logout", "auth-discover", "auth-accounts", "auth-select", "auth-tv-start", "auth-tv-status", "auth-tv-cancel":
 		return s.authCommand(ctx, r)
 	case "playlists":
 		playlists, err := s.catalog.library(ctx)
@@ -938,6 +939,10 @@ func printResponse(out response, asJSON bool) {
 		fmt.Println(string(raw))
 		return
 	}
+	if out.TVLogin != nil && out.Auth == nil {
+		printTVLogin(out.TVLogin)
+		return
+	}
 	if out.Auth != nil {
 		printAuth(out.Auth)
 		return
@@ -975,6 +980,7 @@ func help() {
   search "запрос"            поиск; select N — выбрать результат
   jump N                     включить трек из текущей очереди
   login                      импорт JSON-сессии из stdin (клиент ПК: Firefox)
+  login tv                   вход по коду через YouTube TV (не протухает)
   auth status | auth check   состояние / проверка входа
   logout                     удалить сессию YouTube Music
   liked | playlists          лайки / личные плейлисты
@@ -1107,6 +1113,9 @@ func main() {
 	case "logout":
 		args = []string{"auth-logout"}
 	case "login":
+		if len(args) == 2 && args[1] == "tv" {
+			os.Exit(tvLoginCLI(asJSON))
+		}
 		var auth Credentials
 		if json.NewDecoder(io.LimitReader(os.Stdin, maxControlRequestBytes)).Decode(&auth) != nil {
 			fmt.Fprintln(os.Stderr, "нужен JSON сессии из stdin; на ПК: ytm-alice login")

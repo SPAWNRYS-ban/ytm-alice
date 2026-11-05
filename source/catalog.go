@@ -97,6 +97,10 @@ type Catalog struct {
 	tvAccess      string
 	tvAccessFor   string
 	tvAccessUntil time.Time
+	tvLoginMu     sync.Mutex
+	tvLogin       TVLoginState
+	tvLoginCancel context.CancelFunc
+	tvLoginID     uint64
 	// YouTube answers 429 to a rate-limited IP; back off instead of retrying.
 	limitMu      sync.Mutex
 	limitedUntil time.Time
