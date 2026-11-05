@@ -110,6 +110,14 @@ func (c *Catalog) discoverAccounts(ctx context.Context, auth *Credentials) ([]Yo
 	if err := auth.validate(); err != nil {
 		return nil, err
 	}
+	if auth.isTV() {
+		// The Google account is chosen on the code page; there is nothing to switch here.
+		account, err := c.tvAccountInfo(ctx, auth)
+		if err != nil {
+			return nil, err
+		}
+		return []YouTubeAccount{*account}, nil
+	}
 	base := *auth
 	base.PageID = ""
 	data, err := c.requestWithClient(ctx, "account/accounts_list", map[string]any{"requestType": "ACCOUNTS_LIST_REQUEST_TYPE_CHANNEL_SWITCHER", "callCircumstance": "SWITCHING_USERS_FULL"}, &base, "WEB")
@@ -129,6 +137,9 @@ func (c *Catalog) discoverAccounts(ctx context.Context, auth *Credentials) ([]Yo
 func (c *Catalog) accountInfo(ctx context.Context, auth *Credentials) (*YouTubeAccount, error) {
 	if auth == nil {
 		return nil, errNoAccount
+	}
+	if auth.isTV() {
+		return c.tvAccountInfo(ctx, auth)
 	}
 	if auth.PageID != "" {
 		accounts, err := c.discoverAccounts(ctx, auth)
@@ -213,6 +224,9 @@ func (c *Catalog) switchAccount(ctx context.Context, selected string) error {
 	auth := c.credentials()
 	if auth == nil {
 		return errNoAccount
+	}
+	if auth.isTV() {
+		return errors.New("При входе через YouTube TV аккаунт выбирается на странице Google. Выйди и войди по коду заново.")
 	}
 	accounts, err := c.discoverAccounts(ctx, auth)
 	if err != nil {
