@@ -24,6 +24,8 @@ type Credentials struct {
 	Cookie   string `json:"cookie"`
 	AuthUser string `json:"auth_user"`
 	PageID   string `json:"page_id,omitempty"`
+	// TV replaces Cookie for a sign-in through the YouTube TV app.
+	TV *TVToken `json:"tv,omitempty"`
 }
 
 func (Credentials) String() string   { return "<YouTube Music session>" }
@@ -53,7 +55,16 @@ func (a Credentials) sapisid() string {
 	return fallback
 }
 
+func (a *Credentials) isTV() bool { return a != nil && a.TV != nil }
+
 func (a *Credentials) validate() error {
+	if a.isTV() {
+		if a.Cookie != "" || (a.AuthUser != "" && a.AuthUser != "0") || a.PageID != "" {
+			return errors.New("вход YouTube TV не сочетается с cookies и профилями")
+		}
+		a.AuthUser = "0"
+		return a.TV.validate()
+	}
 	if a == nil || len(a.Cookie) == 0 || len(a.Cookie) > 48000 {
 		return errors.New("нужна сессия YouTube Music до 48 КБ")
 	}
@@ -80,7 +91,7 @@ func (a *Credentials) validate() error {
 
 func (a Credentials) apply(req *http.Request, now time.Time) {
 	// Do not attach credentials to video resolvers, redirects, or CDN requests.
-	if req.URL.Scheme != "https" || req.URL.Host != "music.youtube.com" {
+	if a.TV != nil || req.URL.Scheme != "https" || req.URL.Host != "music.youtube.com" {
 		return
 	}
 	stamp := strconv.FormatInt(now.Unix(), 10)
@@ -195,6 +206,7 @@ func (c *Catalog) logout() error {
 	c.authEpoch.Add(1)
 	c.authMu.Unlock()
 	c.clearPrivateCache()
+	c.forgetTVAccess()
 	return nil
 }
 

@@ -90,6 +90,13 @@ type Catalog struct {
 	authEpoch     atomic.Uint64
 	authResult    AuthStatus
 	authCheckedAt time.Time
+	// YouTube TV client and its short-lived access token (see tv_oauth.go).
+	tvMu          sync.Mutex
+	tvClient      tvClient
+	tvClientAt    time.Time
+	tvAccess      string
+	tvAccessFor   string
+	tvAccessUntil time.Time
 	// YouTube answers 429 to a rate-limited IP; back off instead of retrying.
 	limitMu      sync.Mutex
 	limitedUntil time.Time
