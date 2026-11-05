@@ -175,6 +175,7 @@ func (c *Catalog) authStatus() AuthStatus {
 	status.Method = "cookies"
 	if c.auth.isTV() {
 		status.Method = "tv"
+		status.Cookies = c.auth.Cookie != ""
 	}
 	return status
 }

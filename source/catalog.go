@@ -280,8 +280,8 @@ func (c *Catalog) requestWithClient(ctx context.Context, endpoint string, body m
 		if tvServes(endpoint, body) {
 			return c.tvRequest(ctx, endpoint, body, auth)
 		}
-		// Search, player and queue lookups do not need the account.
-		auth = nil
+		// Search, player and queue lookups go publicly, or with the optional cookies.
+		auth = auth.cookieSession()
 	}
 	if endpoint == "player" {
 		if err := c.playbackLimit(); err != nil {

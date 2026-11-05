@@ -55,8 +55,8 @@ func (c *Catalog) trackVideo(ctx context.Context, id string) (*yt.Video, error) 
 	}
 	var v *yt.Video
 	var musicErr error
-	// The Music player endpoint needs a browser session; a TV sign-in plays publicly.
-	if auth := c.credentials(); auth != nil && !auth.isTV() {
+	// The Music player endpoint needs browser cookies; a TV token is not accepted there.
+	if auth := c.credentials(); auth != nil && auth.Cookie != "" {
 		v, musicErr = c.musicVideo(ctx, id)
 		if musicErr == nil {
 			return v, nil

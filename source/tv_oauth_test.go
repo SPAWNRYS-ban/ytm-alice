@@ -168,8 +168,13 @@ func TestTVCredentialsValidation(t *testing.T) {
 	if err := good().validate(); err != nil {
 		t.Fatal(err)
 	}
+	hybrid := good()
+	hybrid.Cookie, hybrid.AuthUser = "SAPISID=x", "2"
+	if err := hybrid.validate(); err != nil {
+		t.Fatalf("TV sign-in with cookies rejected: %v", err)
+	}
 	mixed := good()
-	mixed.Cookie = "SAPISID=x"
+	mixed.Cookie = "PREF=no-session"
 	profile := good()
 	profile.PageID = "123"
 	foreign := good()
@@ -185,5 +190,9 @@ func TestTVCredentialsValidation(t *testing.T) {
 	good().apply(req, time.Unix(1700000000, 0))
 	if req.Header.Get("Authorization") != "" || req.Header.Get("Cookie") != "" {
 		t.Fatal("TV credentials were signed as a browser session")
+	}
+	hybrid.apply(req, time.Unix(1700000000, 0))
+	if req.Header.Get("Cookie") != "SAPISID=x" || !strings.HasPrefix(req.Header.Get("Authorization"), "SAPISIDHASH ") || req.Header.Get("X-Goog-AuthUser") != "2" {
+		t.Fatal("cookies of a TV sign-in were not signed for Music")
 	}
 }

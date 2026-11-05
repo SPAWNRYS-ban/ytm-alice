@@ -107,6 +107,15 @@ func (c *Catalog) waitTVLogin(ctx context.Context, cancel context.CancelFunc, id
 			fail(err)
 			return
 		}
+		// Keep working cookies of the previous sign-in for 18+ tracks.
+		if current := c.credentials(); current.cookieSession() != nil {
+			hybrid := *current.cookieSession()
+			hybrid.TV = token
+			if c.replaceAuth(ctx, &hybrid) == nil {
+				c.setTVLogin(id, TVLoginState{Status: "done"})
+				return
+			}
+		}
 		if err := c.replaceAuth(ctx, &Credentials{TV: token}); err != nil {
 			fail(err)
 			return

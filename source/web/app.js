@@ -142,7 +142,8 @@ function renderAuth(auth) {
  accountKey=key;
  const name=auth.account?.name;
  const tv=auth.method==='tv';
- $('auth-state').textContent=!auth.configured?'Подключи YouTube Music для лайков и личных плейлистов.':auth.expired?(tv?'Вход через YouTube TV отозван или истёк. Войди по коду заново — очередь и настройки сохранятся.':'Сессия истекла. Загрузи новый cookies.txt — очередь и настройки сохранятся.'):valid?`Подключён профиль ${name||'YouTube Music'}${auth.account?.handle?' · '+auth.account.handle:''}${tv?' (вход через YouTube TV)':''}.`:'Проверяем вход в YouTube Music…';
+ $('auth-state').textContent=!auth.configured?'Подключи YouTube Music для лайков и личных плейлистов.':auth.expired?(tv?'Вход через YouTube TV отозван или истёк. Войди по коду заново — очередь и настройки сохранятся.':'Сессия истекла. Загрузи новый cookies.txt — очередь и настройки сохранятся.'):valid?`Подключён профиль ${name||'YouTube Music'}${auth.account?.handle?' · '+auth.account.handle:''}${tv?' (вход через YouTube TV)':''}.${tv?(auth.cookies?' Cookies для треков 18+ подключены.':' Треки 18+ требуют cookies — их можно добавить ниже.'):''}`:'Проверяем вход в YouTube Music…';
+ $('login-guide-title').textContent=tv?'Добавить cookies для треков 18+ (необязательно)':'Как подключить аккаунт через cookies';
  $('auth-badge').textContent=valid?'Подключён':auth.expired?'Обнови вход':auth.configured?'Проверка':'Не подключён';
  $('auth-badge').classList.toggle('good',valid);$('auth-badge').classList.toggle('expired',!!auth.expired);
  $('account-short-label').textContent=valid?(name||'YouTube Music'):auth.expired?'Обновить вход':'YouTube Music';
