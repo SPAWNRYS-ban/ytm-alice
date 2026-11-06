@@ -90,6 +90,17 @@ type Catalog struct {
 	authEpoch     atomic.Uint64
 	authResult    AuthStatus
 	authCheckedAt time.Time
+	// YouTube TV client and its short-lived access token (see tv_oauth.go).
+	tvMu          sync.Mutex
+	tvClient      tvClient
+	tvClientAt    time.Time
+	tvAccess      string
+	tvAccessFor   string
+	tvAccessUntil time.Time
+	tvLoginMu     sync.Mutex
+	tvLogin       TVLoginState
+	tvLoginCancel context.CancelFunc
+	tvLoginID     uint64
 	// YouTube answers 429 to a rate-limited IP; back off instead of retrying.
 	limitMu      sync.Mutex
 	limitedUntil time.Time
@@ -190,6 +201,13 @@ func parseTracks(root any) []Track {
 	walk = func(x any) {
 		switch v := x.(type) {
 		case map[string]any:
+			if z, ok := v["tileRenderer"]; ok {
+				if t, ok := parseTile(z); ok && !seen[t.ID] {
+					seen[t.ID] = true
+					tracks = append(tracks, t)
+				}
+				return
+			}
 			for _, kind := range []string{"musicResponsiveListItemRenderer", "playlistPanelVideoRenderer", "musicTwoRowItemRenderer"} {
 				if z, ok := v[kind]; ok {
 					id := firstKey(z, "videoId")
@@ -258,6 +276,13 @@ func (c *Catalog) requestWithAuth(ctx context.Context, endpoint string, body map
 	return c.requestWithClient(ctx, endpoint, body, auth, "WEB_REMIX")
 }
 func (c *Catalog) requestWithClient(ctx context.Context, endpoint string, body map[string]any, auth *Credentials, clientName string) (map[string]any, error) {
+	if auth.isTV() {
+		if tvServes(endpoint, body) {
+			return c.tvRequest(ctx, endpoint, body, auth)
+		}
+		// Search, player and queue lookups go publicly, or with the optional cookies.
+		auth = auth.cookieSession()
+	}
 	if endpoint == "player" {
 		if err := c.playbackLimit(); err != nil {
 			return nil, err
@@ -445,9 +470,14 @@ func (c *Catalog) browse(ctx context.Context, id string) ([]Track, error) {
 	return tracks, nil
 }
 func (c *Catalog) radio(ctx context.Context, id string) []Track {
-	d, e := c.request(ctx, "next", map[string]any{"videoId": id, "playlistId": "RDAMVM" + id, "isAudioOnly": true})
+	auth := c.credentials()
+	d, e := c.requestWithAuth(ctx, "next", map[string]any{"videoId": id, "playlistId": "RDAMVM" + id, "isAudioOnly": true}, auth)
 	if e != nil {
 		return nil
+	}
+	if auth.isTV() {
+		// The TV watch page also lists unrelated suggestions; keep the radio queue.
+		return parseTileQueue(d, "RDAMVM"+id)
 	}
 	return parseTracks(d)
 }

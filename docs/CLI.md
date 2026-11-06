@@ -61,6 +61,7 @@ Python и десктопный клиент на самой Станции не 
 | `ytm-alice status` / `ytm-alice --json status` | Состояние в текстовом / JSON-формате |
 | `ytm-alice liked` / `play "мои лайки"` | Показать / включить лайки |
 | `ytm-alice playlists` / `playlist ID` | Плейлисты / включить выбранный |
+| `ytm-alice login tv` / с ПК `ytm-alice login --tv` | Вход по коду через YouTube TV (не протухает) |
 | `ytm-alice auth status` / `auth check` | Сохранённая сессия / проверка входа |
 | `ytm-alice logout` | Удалить сессию со Станции |
 | `ytm-alice announce-on` / `announce-off` | Включить / отключить «Включаю» |

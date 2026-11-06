@@ -21,6 +21,13 @@ func parsePlaylists(root any) []Playlist {
 	walk = func(x any) {
 		switch v := x.(type) {
 		case map[string]any:
+			if item, ok := v["tileRenderer"]; ok {
+				if list, ok := parsePlaylistTile(item); ok && !seen[list.ID] {
+					seen[list.ID] = true
+					result = append(result, list)
+				}
+				return
+			}
 			for _, renderer := range []string{"musicTwoRowItemRenderer", "musicResponsiveListItemRenderer"} {
 				if item, ok := v[renderer]; ok {
 					id := firstKey(get(item, "navigationEndpoint"), "browseId")
@@ -56,6 +63,9 @@ func parsePlaylists(root any) []Playlist {
 func (c *Catalog) library(ctx context.Context) ([]Playlist, error) {
 	if err := c.requireAuth(ctx); err != nil {
 		return nil, err
+	}
+	if c.credentials().isTV() {
+		return c.tvLibrary(ctx)
 	}
 	lists := []Playlist{}
 	seen := map[string]bool{}
