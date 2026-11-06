@@ -678,6 +678,24 @@ func voiceAction(text string) (string, string, bool) {
 			}
 		}
 	}
+	// «Ютуб» anywhere in a music request: «включи трек numb с ютуба». Alice
+	// itself treats these as a video request and refuses on a speaker.
+	if mentionsYouTube(q) {
+		for _, verb := range []string{"включи ", "поставь ", "запусти ", "найди ", "сыграй "} {
+			if !strings.HasPrefix(q, verb) {
+				continue
+			}
+			query := withoutYouTube(strings.TrimSpace(q[len(verb):]))
+			for _, noun := range []string{"песню ", "трек ", "композицию ", "музыку "} {
+				query = strings.TrimSpace(strings.TrimPrefix(query, noun))
+			}
+			switch query {
+			case "", "музыку", "песню", "трек", "что-нибудь":
+				return "recommendations", "", true
+			}
+			return "play", query, true
+		}
+	}
 	for _, verb := range []string{"поставь ", "включи "} {
 		if !strings.HasPrefix(q, verb) {
 			continue
