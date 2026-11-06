@@ -886,7 +886,11 @@ func serve() error {
 	go s.voiceLoop(ctx)
 	go s.mediaLoop(ctx)
 	go s.castLoop(ctx)
-	go s.indicatorLoop(ctx)
+	indicatorDone := make(chan struct{})
+	go func() {
+		defer close(indicatorDone)
+		s.indicatorLoop(ctx)
+	}()
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -907,6 +911,8 @@ func serve() error {
 	s.state.Status = "stopped"
 	s.saveLocked()
 	s.mu.Unlock()
+	cancel()
+	<-indicatorDone // Restore firmware LED triggers before the process exits.
 	httpServer.Close()
 	return e
 }

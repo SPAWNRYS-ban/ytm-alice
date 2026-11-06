@@ -19,17 +19,27 @@ node --test test_web_cookies.mjs
 cargo test --locked --manifest-path media/upstream/Cargo.toml
 ```
 
+## Эмуляторы Станций
+
+Для проверок на разных прошивках используйте [локальный стенд kuyase](KUYASE.md).
+Он запускает отдельные ВМ с собственными данными, ADB и веб-портами.
+
 ## Сборка
 
-> [!WARNING]
-> Проверено на **Яндекс Станции Лайт 1 (YNDX-00025, `yandexmicro`)**.
-> На **Яндекс Станции Мини 2 с часами (`yandexmini_2`)** подтверждены установка,
-> запуск и воспроизведение. Работа на остальных моделях пока не проверена.
+Физические проверки пока подтверждены на Лайт 1 и Мини 2 с часами.
+Для 12 Linux-моделей предусмотрена проверка в kuyase; её результаты и ограничения
+указаны в [матрице](KUYASE-MATRIX.md). Android/YaOS-модели не поддерживаются.
 
-В `source/yam.yaml` указаны платформы `yandexmicro` (Лайт 1) и
-`yandexmini_2` (Мини 2 с часами). CI собирает и проверяет пакеты для обеих
-платформ. Для других моделей требуется проверка
-библиотек прошивки и медиаслоя на соответствующих устройствах.
+Все платформы из `source/platforms.py` используют общий набор бинарников.
+Плеер выбирает ARM32/ARM64 по ELF-классу `libquasar_gstreamer.so`, а не по
+`uname`: на многих Станциях ARM64-ядро с ARM32 userspace. Оба плеера включены
+в каждый пакет. Мини 2 без часов использует профиль YAM `yandexmini_2`,
+Лайт 2 без часов — `plum`, Станция 2 — `yandexstation_2`.
+
+YAM v2 проверяет точное совпадение target пакета и платформы устройства.
+Поэтому CI собирает нативные файлы один раз, затем упаковывает их для каждой
+платформы. Общий `ytm-alice-station.tar.gz` содержит все эти пакеты; единый
+`.yampkg` потребует поддержки универсального target в самом YAM.
 
 Linux x86_64, Docker, Rust с rustup и Go. Станция и библиотеки прошивки для
 сборки не нужны. Сборка также проверяет SHA-256 и собирает QuickJS-ng 0.18.0 для
@@ -48,7 +58,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dis
 git clone https://github.com/nyakokitsu/yam.git ../.build/yam
 git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
 cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
-for platform in yandexmicro yandexmini_2; do
+for platform in $(python3 -c "from platforms import PLATFORMS; print(' '.join(PLATFORMS))"); do
   python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
   python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.4-$platform.yampkg"
 done
