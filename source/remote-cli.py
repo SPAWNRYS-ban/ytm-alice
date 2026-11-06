@@ -337,6 +337,24 @@ def login_credentials(args):
     return {'cookie': cookie, 'auth_user': account}
 
 
+def tv_login(client, as_json=False, wait=3):
+    """Show the YouTube TV code and wait until the speaker confirms the sign-in."""
+    result = client.request('auth-tv-start')
+    login = result.get('tv_login') or {}
+    if as_json:return result
+    print(f"Открой {login.get('verification_url')} и введи код: {login.get('user_code')}")
+    print('Жду подтверждения… (Ctrl+C — прервать ожидание; вход продолжится на колонке)', flush=True)
+    while True:
+        time.sleep(wait)
+        result = client.request('auth-tv-status')
+        login = result.get('tv_login') or {}
+        if login.get('status') == 'waiting':continue
+        if login.get('status') == 'done':
+            print('YouTube TV: вход выполнен.')
+            return result
+        raise ClientError('YouTube TV: '+(login.get('error') or 'вход по коду отменён'), result)
+
+
 def stamp(ms):
     seconds=max(0,int(ms or 0)//1000)
     return f'{seconds//60}:{seconds%60:02d}'
@@ -586,6 +604,7 @@ def main():
     method.add_argument('--browser', choices=['firefox'], help='login: браузер (по умолчанию Firefox)')
     method.add_argument('--cookies', help='login: Netscape cookies-файл')
     method.add_argument('--headers', help='login: browser.json или файл заголовков YouTube Music')
+    method.add_argument('--tv', action='store_true', help='login: вход по коду через YouTube TV (не протухает)')
     parser.add_argument('--profile', help='login: имя или путь профиля Firefox')
     parser.add_argument('--account-index', type=int, choices=range(100), metavar='N',
                         help='login: индекс Google-аккаунта, по умолчанию 0')
@@ -597,11 +616,12 @@ def main():
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     action = ALIASES.get(args.action, args.action) or ('tui' if interactive and not args.json else 'status')
     if action not in COMMANDS:parser.error('неизвестная команда: '+action)
-    if action != 'login' and any((args.browser, args.cookies, args.headers, args.profile, args.account_index is not None)):
+    if action != 'login' and any((args.browser, args.cookies, args.headers, args.tv, args.profile, args.account_index is not None)):
         parser.error('параметры входа доступны только с login')
     text = ' '.join(args.query).strip()
     if action == 'login' and text:parser.error('профиль задаётся через login --profile ИМЯ')
-    if args.profile and (args.cookies or args.headers):parser.error('--profile используется только с Firefox')
+    if args.profile and (args.cookies or args.headers or args.tv):parser.error('--profile используется только с Firefox')
+    if args.tv and args.account_index is not None:parser.error('при входе по коду аккаунт выбирается на странице Google')
     if action in ('play', 'search', 'say', 'probe') and not text:
         parser.error('укажите название или ссылку')
     if action == 'daemon' and (len(args.query) != 1 or args.query[0] not in ('start', 'stop', 'restart', 'install', 'uninstall')):
@@ -649,7 +669,9 @@ def main():
             locale.setlocale(locale.LC_ALL, '')
             curses.wrapper(panel, client)
             return 0
-        if action == 'login':
+        if action == 'login' and args.tv:
+            result = tv_login(client, args.json)
+        elif action == 'login':
             credentials = login_credentials(args)
             result = client.request('auth-import', auth=credentials)
         else:result = client.request(action, text, index, settings=settings, position_ms=position_ms)

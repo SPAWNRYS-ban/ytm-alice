@@ -50,7 +50,7 @@ func browseContents(root map[string]any) map[string]any {
 	shelf = func(value any) (any, bool) {
 		switch v := value.(type) {
 		case map[string]any:
-			for _, key := range []string{"musicPlaylistShelfRenderer", "musicPlaylistShelfContinuation"} {
+			for _, key := range []string{"musicPlaylistShelfRenderer", "musicPlaylistShelfContinuation", "playlistVideoListRenderer", "playlistVideoListContinuation"} {
 				if content, ok := v[key].(map[string]any); ok {
 					return content, true
 				}
@@ -113,6 +113,9 @@ func (c *Catalog) browsePages(ctx context.Context, id string, accept func(map[st
 func (c *Catalog) recommendations(ctx context.Context) ([]Track, error) {
 	if err := c.requireAuth(ctx); err != nil {
 		return nil, err
+	}
+	if c.credentials().isTV() {
+		return c.tvRecommendations(ctx)
 	}
 	data, err := c.request(ctx, "browse", map[string]any{"browseId": "FEmusic_home"})
 	if err != nil {

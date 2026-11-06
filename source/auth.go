@@ -24,6 +24,9 @@ type Credentials struct {
 	Cookie   string `json:"cookie"`
 	AuthUser string `json:"auth_user"`
 	PageID   string `json:"page_id,omitempty"`
+	// TV is a sign-in through the YouTube TV app. Cookie is then optional and
+	// only plays tracks that YouTube serves after sign-in (18+).
+	TV *TVToken `json:"tv,omitempty"`
 }
 
 func (Credentials) String() string   { return "<YouTube Music session>" }
@@ -34,6 +37,8 @@ type AuthStatus struct {
 	Checked    bool            `json:"checked"`
 	Valid      bool            `json:"valid"`
 	Expired    bool            `json:"expired,omitempty"`
+	Method     string          `json:"method,omitempty"`  // cookies or tv
+	Cookies    bool            `json:"cookies,omitempty"` // a TV sign-in also has cookies for 18+
 	Account    *YouTubeAccount `json:"account,omitempty"`
 }
 
@@ -53,7 +58,35 @@ func (a Credentials) sapisid() string {
 	return fallback
 }
 
+func (a *Credentials) isTV() bool { return a != nil && a.TV != nil }
+
+// cookieSession is the browser part of the credentials, or nil without cookies.
+func (a *Credentials) cookieSession() *Credentials {
+	if a == nil || a.Cookie == "" {
+		return nil
+	}
+	return &Credentials{Cookie: a.Cookie, AuthUser: a.AuthUser, PageID: a.PageID}
+}
+
 func (a *Credentials) validate() error {
+	if a.isTV() {
+		if err := a.TV.validate(); err != nil {
+			return err
+		}
+		if a.Cookie == "" {
+			if (a.AuthUser != "" && a.AuthUser != "0") || a.PageID != "" {
+				return errors.New("профиль YouTube выбирается только для cookies")
+			}
+			a.AuthUser = "0"
+			return nil
+		}
+		session := a.cookieSession()
+		if err := session.validate(); err != nil {
+			return err
+		}
+		a.AuthUser = session.AuthUser
+		return nil
+	}
 	if a == nil || len(a.Cookie) == 0 || len(a.Cookie) > 48000 {
 		return errors.New("нужна сессия YouTube Music до 48 КБ")
 	}
@@ -80,7 +113,7 @@ func (a *Credentials) validate() error {
 
 func (a Credentials) apply(req *http.Request, now time.Time) {
 	// Do not attach credentials to video resolvers, redirects, or CDN requests.
-	if req.URL.Scheme != "https" || req.URL.Host != "music.youtube.com" {
+	if a.Cookie == "" || req.URL.Scheme != "https" || req.URL.Host != "music.youtube.com" {
 		return
 	}
 	stamp := strconv.FormatInt(now.Unix(), 10)
@@ -146,6 +179,11 @@ func (c *Catalog) replaceAuthLocked(ctx context.Context, auth *Credentials) erro
 		return err
 	}
 	copy := *auth
+	if copy.isTV() && copy.Cookie != "" {
+		if _, err := c.accountInfo(ctx, copy.cookieSession()); err != nil {
+			return fmt.Errorf("cookies для треков 18+: %w", err)
+		}
+	}
 	account, err := c.accountInfo(ctx, &copy)
 	if err != nil {
 		return err
@@ -182,6 +220,18 @@ func (c *Catalog) replaceAuthLocked(ctx context.Context, auth *Credentials) erro
 	return nil
 }
 
+// importAuth adds browser cookies to a TV sign-in instead of replacing it.
+func (c *Catalog) importAuth(ctx context.Context, auth *Credentials) error {
+	c.authChange.Lock()
+	defer c.authChange.Unlock()
+	if current := c.credentials(); current.isTV() && auth != nil && !auth.isTV() {
+		merged := *current
+		merged.Cookie, merged.AuthUser, merged.PageID = auth.Cookie, auth.AuthUser, auth.PageID
+		auth = &merged
+	}
+	return c.replaceAuthLocked(ctx, auth)
+}
+
 func (c *Catalog) logout() error {
 	c.authChange.Lock()
 	defer c.authChange.Unlock()
@@ -195,6 +245,7 @@ func (c *Catalog) logout() error {
 	c.authEpoch.Add(1)
 	c.authMu.Unlock()
 	c.clearPrivateCache()
+	c.forgetTVAccess()
 	return nil
 }
 
@@ -232,12 +283,30 @@ func (s *Server) authCommand(ctx context.Context, r request) response {
 		status := s.catalog.authStatus()
 		return response{Auth: &status}
 	case "auth-import":
-		if err := s.catalog.replaceAuth(ctx, r.Auth); err != nil {
+		if err := s.catalog.importAuth(ctx, r.Auth); err != nil {
 			return response{Error: err.Error()}
 		}
 		status := s.catalog.authStatus()
 		return response{Auth: &status}
+	case "auth-tv-start":
+		login, err := s.catalog.startTVLogin(ctx)
+		if err != nil {
+			return response{Error: err.Error()}
+		}
+		return response{TVLogin: &login}
+	case "auth-tv-status":
+		login := s.catalog.tvLoginStatus()
+		out := response{TVLogin: &login}
+		if login.Status == "done" {
+			status := s.catalog.authStatus()
+			out.Auth = &status
+		}
+		return out
+	case "auth-tv-cancel":
+		s.catalog.cancelTVLogin()
+		return response{TVLogin: &TVLoginState{Status: "idle"}}
 	case "auth-logout":
+		s.catalog.cancelTVLogin()
 		if err := s.catalog.logout(); err != nil {
 			return response{Error: err.Error()}
 		}

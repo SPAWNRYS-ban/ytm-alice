@@ -13,7 +13,7 @@
 .row-play{display:grid;place-items:center}.row-play .icon{width:16px;height:16px}.secondary-button .icon{width:15px;height:15px}
 #auth-form .primary-button{margin-top:17px}.account-choice{border-top:1px solid var(--line);padding-top:5px;margin-top:18px}
 #account-select{display:block;width:100%;padding:12px;background:#111315;color:var(--text);border:1px solid #38393f;border-radius:7px;font:inherit;font-size:13px}
-.badge.expired{color:#ff9d92;border-color:#804d46}
+.tv-login{margin-bottom:20px}.tv-code{font:650 26px/1.2 ui-monospace,Menlo,monospace;letter-spacing:3px;margin:4px 0 8px;color:#fff}.badge.expired{color:#ff9d92;border-color:#804d46}
 @media(max-width:680px){.nav-item>.icon{width:17px;height:17px}.account-shortcut>.icon{width:14px;height:14px}.play-button .icon{width:23px;height:23px}}
 
 .commands-intro{margin:0 0 20px}.commands-intro h2{font-size:20px;font-weight:600;letter-spacing:-.4px;margin:0}.commands-intro p{font-size:13px;color:var(--muted);margin:7px 0 0}

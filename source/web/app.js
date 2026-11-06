@@ -141,12 +141,14 @@ function renderAuth(auth) {
  if(accountKey&&accountKey!==key){loadedLiked=false;loadedPlaylists=false;}
  accountKey=key;
  const name=auth.account?.name;
- $('auth-state').textContent=!auth.configured?'Подключи YouTube Music для лайков и личных плейлистов.':auth.expired?'Сессия истекла. Загрузи новый cookies.txt — очередь и настройки сохранятся.':valid?`Подключён профиль ${name||'YouTube Music'}${auth.account?.handle?' · '+auth.account.handle:''}.`:'Проверяем вход в YouTube Music…';
+ const tv=auth.method==='tv';
+ $('auth-state').textContent=!auth.configured?'Подключи YouTube Music для лайков и личных плейлистов.':auth.expired?(tv?'Вход через YouTube TV отозван или истёк. Войди по коду заново — очередь и настройки сохранятся.':'Сессия истекла. Загрузи новый cookies.txt — очередь и настройки сохранятся.'):valid?`Подключён профиль ${name||'YouTube Music'}${auth.account?.handle?' · '+auth.account.handle:''}${tv?' (вход через YouTube TV)':''}.${tv?(auth.cookies?' Cookies для треков 18+ подключены.':' Треки 18+ требуют cookies — их можно добавить ниже.'):''}`:'Проверяем вход в YouTube Music…';
+ $('login-guide-title').textContent=tv?'Добавить cookies для треков 18+ (необязательно)':'Как подключить аккаунт через cookies';
  $('auth-badge').textContent=valid?'Подключён':auth.expired?'Обнови вход':auth.configured?'Проверка':'Не подключён';
  $('auth-badge').classList.toggle('good',valid);$('auth-badge').classList.toggle('expired',!!auth.expired);
  $('account-short-label').textContent=valid?(name||'YouTube Music'):auth.expired?'Обновить вход':'YouTube Music';
  $('account-short-label').title=name||'YouTube Music';
- $('logout-auth').disabled=!auth.configured;$('choose-account').disabled=!auth.configured;
+ $('logout-auth').disabled=!auth.configured;$('choose-account').disabled=!auth.configured||tv;
  if(valid&&!previousAuth?.valid)$('login-guide').open=false;
  if(auth.expired)$('login-guide').open=true;
  previousAuth=auth;
@@ -204,6 +206,26 @@ $('refresh-playlists').onclick=()=>perform($('refresh-playlists'),loadPlaylists)
 $('announce').onchange=()=>perform(null,async()=>{try{await command($('announce').checked?'announce-on':'announce-off');}catch(error){$('announce').checked=!!state?.announce;throw error;}});
 $('check-auth').onclick=()=>perform($('check-auth'),async()=>{await command('auth-check');notice('Вход в YouTube Music подтверждён.',true);});
 $('logout-auth').onclick=()=>perform($('logout-auth'),async()=>{await command('auth-logout');if(importCredentials)importCredentials.cookie='';importCredentials=null;discoveredAccounts=[];$('cookie-file').value='';$('account-choice').hidden=true;loadedLiked=false;loadedPlaylists=false;notice('Аккаунт отключён от колонки.',true);await request('/api/state');});
+let tvTimer=null;
+function stopTVLogin(){clearTimeout(tvTimer);tvTimer=null;$('tv-login-box').hidden=true;$('tv-login').disabled=false;}
+function showTVLogin(login){
+ if(login?.status!=='waiting'){stopTVLogin();return false;}
+ $('tv-login-code').textContent=login.user_code;$('tv-login-url').href=login.verification_url;
+ $('tv-login-url').textContent=login.verification_url.replace(/^https:\/\/(www\.)?/,'');
+ $('tv-login-box').hidden=false;$('tv-login').disabled=true;return true;
+}
+function pollTVLogin(){
+ tvTimer=setTimeout(async()=>{
+  try{
+   const login=(await request('/api/command',{action:'auth-tv-status'})).tv_login;
+   if(showTVLogin(login)){pollTVLogin();return;}
+   if(login?.status==='done'){loadedLiked=false;loadedPlaylists=false;notice('Вход через YouTube TV выполнен.',true);await request('/api/state');}
+   else if(login?.status==='failed')notice(login.error||'Вход через YouTube TV не выполнен.');
+  }catch(error){stopTVLogin();notice(error.message||'Нет связи с колонкой.');}
+ },3000);
+}
+$('tv-login').onclick=()=>perform(null,async()=>{$('tv-login').disabled=true;try{const result=await command('auth-tv-start');if(showTVLogin(result.tv_login))pollTVLogin();else stopTVLogin();}catch(error){stopTVLogin();throw error;}});
+$('tv-login-cancel').onclick=()=>perform(null,async()=>{stopTVLogin();await command('auth-tv-cancel');});
 function showAccounts(accounts) {
  discoveredAccounts=accounts;
  const select=$('account-select');select.replaceChildren();
