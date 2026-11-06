@@ -19,6 +19,15 @@ node --test test_web_cookies.mjs
 cargo test --locked --manifest-path media/upstream/Cargo.toml
 ```
 
+Для проверки публичных endpoint YouTube без входа в аккаунт:
+
+```sh
+YTM_PUBLIC_RELEASE_SMOKE=1 go test -run 'TestPublic(ReleaseSmoke|DeviceCode)' -v
+```
+
+Проверка ищет пример из #14 на латинице и кириллицей, получает и отменяет
+код Google. Она не авторизует аккаунт и не входит в обычный набор CI-тестов.
+
 ## Эмуляторы Станций
 
 Для проверок на разных прошивках используйте [локальный стенд kuyase](KUYASE.md).
@@ -60,7 +69,7 @@ git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
 cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
 for platform in $(python3 -c "from platforms import PLATFORMS; print(' '.join(PLATFORMS))"); do
   python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
-  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.4-$platform.yampkg"
+  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.5-$platform.yampkg"
 done
 python3 scripts/release-assets.py ../release/*.yampkg
 ```

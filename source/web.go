@@ -71,8 +71,38 @@ func hostName(hostport string) string {
 	}
 	return strings.ToLower(strings.Trim(hostport, "[]"))
 }
+
+// Explicit names preserve the Host header through a reverse proxy without
+// accepting arbitrary DNS-rebinding hosts or trusting forwarded headers.
+func validWebHost(host string) bool {
+	if len(host) == 0 || len(host) > 253 || host != strings.ToLower(host) || net.ParseIP(host) != nil {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, ch := range label {
+			if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+func (p *webPanel) configuredHost(host string) bool {
+	for _, allowed := range p.server.getSettings().WebHosts {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
+}
 func (p *webPanel) hostOK(r *http.Request) bool {
 	host := hostName(r.Host)
+	if p.configuredHost(host) {
+		return true
+	}
 	switch host {
 	case "alice.lan", "alice.local", "localhost":
 		return true
@@ -100,7 +130,15 @@ func (p *webPanel) originOK(r *http.Request) bool {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	return r.Header.Get("Origin") == scheme+"://"+r.Host && r.Header.Get("Sec-Fetch-Site") != "cross-site"
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	if origin == scheme+"://"+r.Host {
+		return true
+	}
+	// TLS may terminate at the proxy; allow HTTPS only for explicitly named hosts.
+	return p.configuredHost(hostName(r.Host)) && origin == "https://"+r.Host
 }
 func webJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

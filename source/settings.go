@@ -15,6 +15,7 @@ import (
 const defaultWebAddr = ":24721"
 
 type Settings struct {
+	WebHosts       []string          `json:"web_hosts"`
 	WebAddr        string            `json:"web_addr"`
 	Radio          bool              `json:"radio"`
 	Shuffle        bool              `json:"shuffle"`
@@ -25,6 +26,7 @@ type Settings struct {
 }
 
 type SettingsPatch struct {
+	WebHosts       []string          `json:"web_hosts,omitempty"`
 	WebAddr        *string           `json:"web_addr,omitempty"`
 	Radio          *bool             `json:"radio,omitempty"`
 	Shuffle        *bool             `json:"shuffle,omitempty"`
@@ -46,6 +48,7 @@ func (s *Server) settingsLocked() Settings {
 		value = *s.settings
 	}
 	value.VoiceCommands = cloneCommands(value.VoiceCommands)
+	value.WebHosts = append([]string(nil), value.WebHosts...)
 	return value
 }
 
@@ -64,6 +67,15 @@ func (s *Server) getSettings() Settings {
 }
 
 func validateSettings(value Settings) error {
+	if len(value.WebHosts) > 16 {
+		return errors.New("можно разрешить до 16 доменов панели")
+	}
+	for _, host := range value.WebHosts {
+		if !validWebHost(host) {
+			return errors.New("web_hosts: нужны точные имена доменов без схемы, порта и пути")
+		}
+	}
+
 	if value.WebAddr != "off" {
 		host, port, err := net.SplitHostPort(value.WebAddr)
 		n, numErr := strconv.Atoi(port)
@@ -160,6 +172,9 @@ func (s *Server) settingsCommand(r request) response {
 		if p == nil {
 			return response{Error: "нужны настройки"}
 		}
+		if p.WebHosts != nil {
+			value.WebHosts = append([]string{}, p.WebHosts...)
+		}
 		if p.WebAddr != nil {
 			value.WebAddr = *p.WebAddr
 		}
@@ -222,6 +237,12 @@ func configRequest(args []string) (request, error) {
 			return request{}, errors.New("нужно true или false")
 		}
 		raw = v
+	case "web_hosts":
+		var hosts []string
+		if json.Unmarshal([]byte(value), &hosts) != nil || hosts == nil {
+			return request{}, errors.New("нужен JSON-массив доменов")
+		}
+		raw = hosts
 	case "voice_commands":
 		var commands map[string]string
 		if json.Unmarshal([]byte(value), &commands) != nil || commands == nil {

@@ -178,7 +178,7 @@ def stop(board):
 def deploy(board, package):
     if not active(board):
         raise RuntimeError('Start model first: '+board)
-    payload = LAB/'payload'
+    payload = LAB/'payload'/board
     payload.mkdir(parents=True, exist_ok=True)
     # Package format is zstd tar. Extract only its application binaries;
     # package target compatibility and YAM lifecycle are separate tests.

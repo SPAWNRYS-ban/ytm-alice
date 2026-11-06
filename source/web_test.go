@@ -185,3 +185,54 @@ func TestThumbnailsComeFromMetadataWithoutFetchingImages(t *testing.T) {
 		t.Fatal("stale result selected a different song")
 	}
 }
+
+func TestConfiguredDomainWorksThroughHTTPSProxyWithoutTrustingForwardedHeaders(t *testing.T) {
+	t.Setenv("YTM_ALICE_DATA", t.TempDir())
+	p := panelFixture()
+	hosts := []string{"music.example.org"}
+	out := p.server.settingsCommand(request{Action: "config-set", Settings: &SettingsPatch{WebHosts: hosts}})
+	if out.Error != "" {
+		t.Fatal(out.Error)
+	}
+	for _, origin := range []string{"http://music.example.org", "https://music.example.org"} {
+		req := httptest.NewRequest("POST", "http://music.example.org/api/command", strings.NewReader(`{"action":"status"}`))
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Ytm-Client", "web")
+		result := httptest.NewRecorder()
+		p.ServeHTTP(result, req)
+		if result.Code != 200 {
+			t.Fatalf("%s: %d %s", origin, result.Code, result.Body.String())
+		}
+	}
+	req := httptest.NewRequest("GET", "http://evil.invalid/api/state", nil)
+	req.Header.Set("X-Forwarded-Host", "music.example.org")
+	result := httptest.NewRecorder()
+	p.ServeHTTP(result, req)
+	if result.Code != 403 {
+		t.Fatal("forwarded header bypassed host allowlist")
+	}
+	req = httptest.NewRequest("POST", "http://music.example.org/api/command", strings.NewReader(`{"action":"status"}`))
+	req.Header.Set("Origin", "https://evil.invalid")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Ytm-Client", "web")
+	result = httptest.NewRecorder()
+	p.ServeHTTP(result, req)
+	if result.Code != 403 {
+		t.Fatal("domain allowlist bypassed origin protection")
+	}
+	reloaded := &Server{}
+	if err := reloaded.loadSettings(); err != nil || len(reloaded.getSettings().WebHosts) != 1 {
+		t.Fatal("domain setting did not survive reload", err)
+	}
+}
+
+func TestWebDomainAllowlistRejectsURLsWildcardsAndPorts(t *testing.T) {
+	for _, host := range []string{"https://music.example.org", "*.example.org", "music.example.org:443", "a..example.org", "-bad.example.org", "bad/example.org", "evil.example.org@music.example.org"} {
+		value := defaultSettings()
+		value.WebHosts = []string{host}
+		if validateSettings(value) == nil {
+			t.Fatal("invalid domain accepted", host)
+		}
+	}
+}

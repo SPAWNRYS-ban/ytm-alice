@@ -60,7 +60,7 @@ rootfs/UBI сначала используйте `kuyase prepare --dump ...` с�
 
 ```sh
 python3 tools/kuyase/lab.py start yandexmicro
-python3 tools/kuyase/lab.py deploy yandexmicro /путь/ytm-alice-0.7.4-yandexmicro.yampkg
+python3 tools/kuyase/lab.py deploy yandexmicro /путь/ytm-alice-0.7.5-yandexmicro.yampkg
 python3 tools/kuyase/lab.py status
 python3 tools/kuyase/lab.py shell yandexmicro 'cat /tmp/ytm-alice.log'
 python3 tools/kuyase/lab.py smoke yandexmicro
@@ -138,11 +138,10 @@ Kuyase работает в режиме `stub`: ALSA и локальный IPC �
 ## Результаты проверок
 
 Полная таблица по 12 моделям находится в [KUYASE-MATRIX.md](KUYASE-MATRIX.md).
-Базовый прогон выполнен с релизом 0.7.4 (`ca93afe`). Текущий кандидат
-с исправлением #13 и общим медиаслоем находится в `.build/candidate-final/`;
-его происхождение и SHA-256 бинарников указаны в `build.json`, пакетов —
-в `SHA256SUMS`. Версия в приложении пока остаётся 0.7.4; это локальная
-сборка, а не опубликованный релиз. Источники и SHA-256 всех образов хранятся в
+Базовый прогон выполнен с релизом 0.7.4 (`ca93afe`). Для 0.7.5 повторно
+проверяются HTTP/CLI, медиаслой обоих ABI, LED-trigger и перезапуск.
+Артефакты и результаты локальной проверки находятся в `.build/release-0.7.5/`.
+Источники и SHA-256 всех образов хранятся в
 `.build/kuyase-lab/images.json`.
 
 Детальные отчёты приложения: `.build/kuyase-lab/reports/<профиль>.json`.

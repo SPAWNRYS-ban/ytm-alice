@@ -1,5 +1,5 @@
 name: local/ytm-alice
-version: 0.7.4
+version: 0.7.5
 license: MIT AND CC-BY-4.0
 description: Автономный YouTube Music с медиаслоем и штатной кнопкой Алисы
 targets: [yandexmicro, yandexmini_2, yandexmini, bergamot, plum, cucumber, pickle, mango, yandexstation_2, orion]

@@ -141,6 +141,21 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(received[0]['settings'],{'radio':False})
         with self.assertRaises(cli.ClientError):cli.config_request(['set','radio','maybe'])
 
+    def test_domain_allowlist_is_a_json_array_over_http(self):
+        received=[]
+        def reply(handler):
+            received.append(json.loads(handler.payload))
+            handler.send_response(200);handler.end_headers()
+            handler.wfile.write(b'{}')
+        action,patch=cli.config_request(['set','web_hosts','["music.example.org"]'])
+        with server(reply) as url:
+            client=cli.Client(base_url=url);self.addCleanup(client.close)
+            client.request(action,settings=patch)
+        self.assertEqual(received[0]['settings'],{'web_hosts':['music.example.org']})
+        self.assertEqual(cli.config_request(['set','web_hosts','[]'])[1],{'web_hosts':[]})
+        for invalid in ('{}','null','[1]','bad'):
+            with self.assertRaises(cli.ClientError):cli.config_request(['set','web_hosts',invalid])
+
 
 class InstallerTests(unittest.TestCase):
     def install(self, directory, valid):

@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 
-VERSION = '0.7.4'
+VERSION = '0.7.5'
 REMOTE = '/data/yam/bin/ytm-alice'
 STATES = {'playing': 'Играет', 'paused': 'Пауза', 'stopped': 'Остановлено',
           'searching': 'Поиск', 'buffering': 'Подготовка', 'error': 'Ошибка'}
@@ -581,6 +581,10 @@ def config_request(arguments):
         if value.lower() not in ('true', 'false'):
             raise ClientError('нужно true или false')
         value = value.lower() == 'true'
+    elif key == 'web_hosts':
+        try:value = json.loads(value)
+        except ValueError as error:raise ClientError('нужен JSON-массив доменов') from error
+        if not isinstance(value, list) or not all(isinstance(host, str) for host in value):raise ClientError('нужен JSON-массив доменов')
     elif key == 'voice_commands':
         try:value = json.loads(value)
         except ValueError as error:raise ClientError('нужен JSON-объект голосовых команд') from error
@@ -604,7 +608,7 @@ def main():
     method.add_argument('--browser', choices=['firefox'], help='login: браузер (по умолчанию Firefox)')
     method.add_argument('--cookies', help='login: Netscape cookies-файл')
     method.add_argument('--headers', help='login: browser.json или файл заголовков YouTube Music')
-    method.add_argument('--tv', action='store_true', help='login: вход по коду через YouTube TV (не протухает)')
+    method.add_argument('--tv', action='store_true', help='login: вход по коду через YouTube TV с автоматическим обновлением входа')
     parser.add_argument('--profile', help='login: имя или путь профиля Firefox')
     parser.add_argument('--account-index', type=int, choices=range(100), metavar='N',
                         help='login: индекс Google-аккаунта, по умолчанию 0')
