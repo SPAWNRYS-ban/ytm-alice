@@ -820,14 +820,20 @@ func (s *Server) voiceLoop(ctx context.Context) {
 		s.aliceIdle.Store(false)
 	}
 }
-func newCatalog() *Catalog {
+func stationCertPool(paths ...string) *x509.CertPool {
 	roots, _ := x509.SystemCertPool()
 	if roots == nil {
 		roots = x509.NewCertPool()
 	}
-	if pem, e := os.ReadFile("/system/vendor/quasar/certs/ca-certificates.crt"); e == nil {
-		roots.AppendCertsFromPEM(pem)
+	for _, path := range paths {
+		if pem, err := os.ReadFile(path); err == nil {
+			roots.AppendCertsFromPEM(pem)
+		}
 	}
+	return roots
+}
+func newCatalog() *Catalog {
+	roots := stationCertPool("/system/vendor/quasar/certs/ca-certificates.crt", "/system/vendor/quasar/ca-certificates.crt")
 	h := &http.Client{Timeout: 40 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second, ResponseHeaderTimeout: 15 * time.Second}}
 	return &Catalog{http: h, cache: map[string]catalogEntry{}, streams: map[string]streamInfo{}}
 }
