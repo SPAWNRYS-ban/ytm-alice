@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Use the official YAM v2 packer; never constructs MANIFEST.yaml by hand."""
+from platforms import PLATFORMS
 import argparse
 import hashlib
 from pathlib import Path
@@ -10,7 +11,7 @@ version = subprocess.check_output(['python3', str(root/'scripts/check-version.py
 p = argparse.ArgumentParser()
 p.add_argument('--yam', default='yam', help='YAM v2 executable')
 p.add_argument('--runner', help='Optional emulator for an aarch64 YAM on x86_64')
-p.add_argument('--platform', choices=('yandexmicro', 'yandexmini_2'), default='yandexmicro')
+p.add_argument('--platform', choices=PLATFORMS, default='yandexmicro')
 p.add_argument('--profiles', type=Path, required=True)
 p.add_argument('--output', type=Path)
 a = p.parse_args()

@@ -3,6 +3,9 @@
 import argparse
 import os
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from platforms import PLATFORMS
 import subprocess
 import struct
 import tempfile
@@ -11,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('package', type=Path)
 parser.add_argument('--yam', required=True)
 parser.add_argument('--runner')
-parser.add_argument('--platform', choices=('yandexmicro', 'yandexmini_2'), default='yandexmicro')
+parser.add_argument('--platform', choices=PLATFORMS, default='yandexmicro')
 parser.add_argument('--profiles', required=True, type=Path)
 args = parser.parse_args()
 package = args.package.resolve()
@@ -30,9 +33,12 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     invoke('install', '--yes', package)
     assert invoke('list').split() == ['local/ytm-alice',version,args.platform]
     root = temporary/'root'
-    for binary in ('ytm-alice','ytm-alice-player','ytm-alice-resolver','alice-media','bt-proxy'):
+    for binary in ('ytm-alice','ytm-alice-player','ytm-alice-resolver','ytm-alice-player-armhf','ytm-alice-player-arm64','alice-media','bt-proxy'):
         link = root/'bin'/binary
         assert link.is_symlink() and link.resolve().is_file() and os.access(link, os.X_OK), binary
+    for binary, elf_class in [('ytm-alice-player-armhf', 1), ('ytm-alice-player-arm64', 2)]:
+        assert (root/'bin'/binary).read_bytes()[:5] == b'\x7fELF'+bytes([elf_class])
+    assert (root/'bin/ytm-alice-player').read_bytes().startswith(b'#!/bin/sh')
     # The resolver is a self-contained ARM32 binary: no firmware loader or
     # optional libatomic/libstdc++ may become a hidden installation requirement.
     helper = (root/'bin/ytm-alice-resolver').read_bytes()
@@ -78,4 +84,4 @@ with tempfile.TemporaryDirectory(prefix='ytm-package-check-') as directory:
     assert settings.read_text() == '{"web_addr":":24721","radio":false}'
     assert settings.stat().st_mode & 0o777 == 0o600
     invoke('doctor')
-    print(args.platform+': five executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')
+    print(args.platform+': seven executables, clean install, upgrade from two packages, removal, session preservation and doctor OK')

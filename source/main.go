@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-const version = "0.7.4"
+const version = "0.7.5"
 const relayAddr = "127.0.0.1:18883"
 
 func dataDir() string {
@@ -112,22 +112,23 @@ func (p *nativePlayer) stop() {
 }
 
 type Server struct {
-	mu             sync.Mutex
-	state          State
-	catalog        *Catalog
-	player         *nativePlayer
-	generation     uint64
-	prepCancel     context.CancelFunc
-	latestSearch   []Track
-	speechMu       sync.Mutex
-	closing        bool
-	mediaConnected atomic.Bool
-	settings       *Settings
-	webAddr        string
-	queueOrder     []Track
-	queueCast      bool
-	radioLoad      *radioLoad
-	aliceIdle      atomic.Bool
+	mu               sync.Mutex
+	state            State
+	catalog          *Catalog
+	player           *nativePlayer
+	generation       uint64
+	lookupGeneration uint64
+	prepCancel       context.CancelFunc
+	latestSearch     []Track
+	speechMu         sync.Mutex
+	closing          bool
+	mediaConnected   atomic.Bool
+	settings         *Settings
+	webAddr          string
+	queueOrder       []Track
+	queueCast        bool
+	radioLoad        *radioLoad
+	aliceIdle        atomic.Bool
 }
 
 func (s *Server) snapshot() State {
@@ -216,9 +217,10 @@ func (s *Server) command(ctx context.Context, r request) response {
 		return response{Tracks: t}
 	case "play", "recommendations":
 		s.mu.Lock()
-		s.stopLocked()
-		s.state.Status = "searching"
-		s.state.Error = ""
+		// Resolve before stopping: an irrelevant/missing result must not
+		// interrupt the song already playing (#14).
+		s.lookupGeneration++
+		lookup := s.lookupGeneration
 		g := s.generation
 		s.mu.Unlock()
 		var tracks []Track
@@ -226,19 +228,15 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
-			tracks, e = s.catalog.lookup(ctx, r.Query)
+			tracks, e = s.catalog.playLookup(ctx, r.Query)
 		}
 		s.mu.Lock()
-		if s.generation != g {
+		if s.generation != g || s.lookupGeneration != lookup {
 			s.mu.Unlock()
 			return response{Error: "запрос заменён более новым"}
 		}
 		if e != nil {
-			s.state.Status = "error"
-			s.state.Error = e.Error()
-			s.saveLocked()
 			s.mu.Unlock()
-			s.notifyFailure(g)
 			return response{Error: e.Error()}
 		}
 		index := -1
@@ -250,7 +248,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		s.state.PositionMS = 0
 		s.saveLocked()
 		s.mu.Unlock()
-		s.start(0, true)
+		s.startGuarded(0, true, 0, &g)
 	case "select", "jump":
 		s.mu.Lock()
 		i := r.Index - 1
@@ -274,6 +272,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		s.start(0, true)
 	case "next", "previous", "resume", "pause", "toggle", "stop", "seek", "announce-on", "announce-off":
 		s.mu.Lock()
+		s.lookupGeneration++
 		if r.Action == "toggle" {
 			r.Action = "resume"
 			if s.state.Status == "playing" || s.state.Status == "buffering" || s.state.Status == "searching" {
@@ -821,14 +820,20 @@ func (s *Server) voiceLoop(ctx context.Context) {
 		s.aliceIdle.Store(false)
 	}
 }
-func newCatalog() *Catalog {
+func stationCertPool(paths ...string) *x509.CertPool {
 	roots, _ := x509.SystemCertPool()
 	if roots == nil {
 		roots = x509.NewCertPool()
 	}
-	if pem, e := os.ReadFile("/system/vendor/quasar/certs/ca-certificates.crt"); e == nil {
-		roots.AppendCertsFromPEM(pem)
+	for _, path := range paths {
+		if pem, err := os.ReadFile(path); err == nil {
+			roots.AppendCertsFromPEM(pem)
+		}
 	}
+	return roots
+}
+func newCatalog() *Catalog {
+	roots := stationCertPool("/system/vendor/quasar/certs/ca-certificates.crt", "/system/vendor/quasar/ca-certificates.crt")
 	h := &http.Client{Timeout: 40 * time.Second, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, MaxIdleConns: 4, MaxIdleConnsPerHost: 2, IdleConnTimeout: 30 * time.Second, ResponseHeaderTimeout: 15 * time.Second}}
 	return &Catalog{http: h, cache: map[string]catalogEntry{}, streams: map[string]streamInfo{}}
 }
@@ -887,7 +892,11 @@ func serve() error {
 	go s.voiceLoop(ctx)
 	go s.mediaLoop(ctx)
 	go s.castLoop(ctx)
-	go s.indicatorLoop(ctx)
+	indicatorDone := make(chan struct{})
+	go func() {
+		defer close(indicatorDone)
+		s.indicatorLoop(ctx)
+	}()
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -908,6 +917,8 @@ func serve() error {
 	s.state.Status = "stopped"
 	s.saveLocked()
 	s.mu.Unlock()
+	cancel()
+	<-indicatorDone // Restore firmware LED triggers before the process exits.
 	httpServer.Close()
 	return e
 }
@@ -980,7 +991,7 @@ func help() {
   search "запрос"            поиск; select N — выбрать результат
   jump N                     включить трек из текущей очереди
   login                      импорт JSON-сессии из stdin (клиент ПК: Firefox)
-  login tv                   вход по коду через YouTube TV (не протухает)
+  login tv                   вход по коду через YouTube TV с автообновлением входа
   auth status | auth check   состояние / проверка входа
   logout                     удалить сессию YouTube Music
   liked | playlists          лайки / личные плейлисты

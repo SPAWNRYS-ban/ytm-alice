@@ -1,0 +1,14 @@
+#!/bin/sh
+# Select the ABI of the firmware GStreamer, not the kernel (often ARM64/ARM32).
+set -eu
+base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+for library in /system/vendor/quasar/libquasar_gstreamer.so /system/vendor/quasar/libs/libquasar_gstreamer.so; do
+    [ -f "$library" ] || continue
+    elf=$(od -An -tu1 -j4 -N1 "$library" | tr -d ' ')
+    case "$elf" in
+        1) exec "$base/ytm-alice-player-armhf" "$@" ;;
+        2) exec "$base/ytm-alice-player-arm64" "$@" ;;
+    esac
+done
+echo 'Unsupported or missing firmware GStreamer ELF' >&2
+exit 3

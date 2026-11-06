@@ -1,8 +1,8 @@
 name: local/ytm-alice
-version: 0.7.4
+version: 0.7.5
 license: MIT AND CC-BY-4.0
 description: Автономный YouTube Music с медиаслоем и штатной кнопкой Алисы
-targets: [yandexmicro, yandexmini_2]
+targets: [yandexmicro, yandexmini_2, yandexmini, bergamot, plum, cucumber, pickle, mango, yandexstation_2, orion]
 permissions: [network, audio, speech, exec, ipc]
 conflicts: [local/alice-media]
 replaces: [local/alice-media]
@@ -10,6 +10,8 @@ files:
   bin/ytm-alice: dist/ytm-alice
   bin/ytm-alice-resolver: dist/ytm-alice-resolver
   bin/ytm-alice-player: dist/ytm-alice-player
+  bin/ytm-alice-player-armhf: dist/ytm-alice-player-armhf
+  bin/ytm-alice-player-arm64: dist/ytm-alice-player-arm64
   bin/alice-media: media/alice-media
   bin/bt-proxy: media/dist/bt-proxy
   share/local.ytm-alice/README.md: ../README.md

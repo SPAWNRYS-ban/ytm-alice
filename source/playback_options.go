@@ -172,13 +172,14 @@ func (s *Server) voiceAction(text string) (string, string, bool) {
 	return voiceAction(text)
 }
 
-// Only the ring nodes of the two supported sysfs profiles are addressed. Do
-// not touch the clock display, triggers, microphone LED or another model.
+// Only complete, known RGB rings are addressed; never clocks, microphone
+// indicators, logos or ambilight. Mini 1 uses I2C and is intentionally excluded.
 func playbackLEDPaths(root string) []string {
 	for _, profile := range []struct {
 		name  string
 		count int
-	}{{"micro", 3}, {"mini2", 6}} {
+	}{{"micro", 3}, {"mini2", 6}, {"plum", 3}, {"bergamot", 6},
+		{"cucumber", 24}, {"pickle", 16}, {"mango", 4}, {"station2", 88}, {"orion", 36}} {
 		paths := []string{}
 		matches, _ := filepath.Glob(filepath.Join(root, profile.name+":*:ring*", "brightness"))
 		for _, path := range matches {
@@ -194,12 +195,79 @@ func playbackLEDPaths(root string) []string {
 	return nil
 }
 
-func (s *Server) indicatorLoop(ctx context.Context) {
-	paths := playbackLEDPaths("/sys/class/leds")
-	if len(paths) == 0 {
+// Firmware animations own the ring through ledfb-ring. Brightness writes alone
+// race those animations and cause flashes (#13). Temporarily take each trigger,
+// then restore it before handing the ring back to Alice or on shutdown.
+type playbackIndicator struct {
+	paths    []string
+	triggers map[string]string
+}
+
+func activeLEDTrigger(raw []byte) string {
+	for _, value := range strings.Fields(string(raw)) {
+		if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+			return strings.Trim(value, "[]")
+		}
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func (led *playbackIndicator) update(dark bool) {
+	if led.triggers == nil {
+		led.triggers = map[string]string{}
+	}
+	if !dark {
+		for path, original := range led.triggers {
+			current, err := os.ReadFile(path)
+			// Another owner may have changed the trigger in the meantime.
+			if err == nil && activeLEDTrigger(current) == "none" {
+				if os.WriteFile(path, []byte(original), 0) != nil {
+					continue
+				}
+			}
+			delete(led.triggers, path)
+		}
 		return
 	}
-	ticker := time.NewTicker(40 * time.Millisecond)
+	for _, brightness := range led.paths {
+		trigger := filepath.Join(filepath.Dir(brightness), "trigger")
+		if _, owned := led.triggers[trigger]; owned {
+			continue // The detached firmware driver cannot relight this node.
+		}
+		raw, err := os.ReadFile(trigger)
+		if err != nil {
+			continue
+		}
+		original := activeLEDTrigger(raw)
+		if original == "" {
+			continue
+		}
+		if err := os.WriteFile(trigger, []byte("none"), 0); err != nil {
+			continue
+		}
+		led.triggers[trigger] = original
+		if err := os.WriteFile(brightness, []byte("0"), 0); err != nil {
+			_ = os.WriteFile(trigger, []byte(original), 0)
+			delete(led.triggers, trigger)
+		}
+	}
+}
+
+func suppressPlaybackLED(enabled bool, status string, aliceIdle bool) bool {
+	if enabled || !aliceIdle {
+		return false
+	}
+	// Keep ownership across track changes, seeks and CDN rebuffering.
+	return status == "playing" || status == "buffering" || status == "searching"
+}
+
+func (s *Server) indicatorLoop(ctx context.Context) {
+	led := playbackIndicator{paths: playbackLEDPaths("/sys/class/leds")}
+	if len(led.paths) == 0 {
+		return
+	}
+	defer led.update(false)
+	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
@@ -207,14 +275,9 @@ func (s *Server) indicatorLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.mu.Lock()
-			dark := !s.settingsLocked().PlaybackLED && s.state.Status == "playing"
+			dark := suppressPlaybackLED(s.settingsLocked().PlaybackLED, s.state.Status, s.aliceIdle.Load())
 			s.mu.Unlock()
-			// A fresh Alice dialog immediately regains the LED driver.
-			if dark && s.aliceIdle.Load() {
-				for _, path := range paths {
-					_ = os.WriteFile(path, []byte("0"), 0)
-				}
-			}
+			led.update(dark)
 		}
 	}
 }

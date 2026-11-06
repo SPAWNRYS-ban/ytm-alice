@@ -5,6 +5,9 @@ import gzip
 import hashlib
 import io
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from platforms import PLATFORMS
 import shutil
 import subprocess
 import tarfile
@@ -17,8 +20,8 @@ args = parser.parse_args()
 packages = sorted(path.resolve() for path in args.packages)
 out = packages[0].parent
 version = subprocess.check_output(['python3', str(root/'scripts/check-version.py')], text=True).strip()
-expected = {f'ytm-alice-{version}-{platform}.yampkg' for platform in ('yandexmicro','yandexmini_2')}
-if (len(packages) != len(set(packages)) or any(path.parent != out or path.name not in expected
+expected = {f'ytm-alice-{version}-{platform}.yampkg' for platform in PLATFORMS}
+if ({path.name for path in packages} != expected or len(packages) != len(set(packages)) or any(path.parent != out or path.name not in expected
                                             or not path.is_file() for path in packages)):
     parser.error('Expected current-version Station packages in the same output directory')
 

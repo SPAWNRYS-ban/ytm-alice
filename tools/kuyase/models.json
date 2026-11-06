@@ -1,0 +1,14 @@
+{
+  "yandexmicro": {"name": "Станция Лайт 1", "offset": 100, "message": 131563},
+  "yandexmini2": {"name": "Станция Мини 2 с часами", "offset": 200, "message": 131561},
+  "cucumber": {"name": "Станция Миди", "offset": 300, "message": 131571},
+  "pickle": {"name": "Станция Мини 3 Про", "offset": 400, "message": 135437},
+  "yandexmini": {"name": "Станция Мини 1", "offset": 500, "message": 131562},
+  "yandexmini2nc": {"name": "Станция Мини 2 без часов", "offset": 600, "message": 131566},
+  "bergamot": {"name": "Станция Мини 3", "offset": 700, "message": 131572},
+  "plum": {"name": "Станция Лайт 2 с часами", "offset": 800, "message": 131567},
+  "plumnc": {"name": "Станция Лайт 2 без часов", "offset": 900, "message": 131565},
+  "mango": {"name": "Станция Стрит", "offset": 1000, "message": 131570},
+  "station2": {"name": "Станция 2", "offset": 1100, "message": 131564},
+  "orion": {"name": "Станция 3", "offset": 1200, "message": 131568}
+}
