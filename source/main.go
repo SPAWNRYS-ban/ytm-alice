@@ -749,7 +749,7 @@ func nativeVoiceTarget(query string) bool {
 func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
-	var trackRequests []string
+	var trackRequests, takenOver []string
 	for ctx.Err() == nil {
 		c, e := net.DialTimeout("tcp", ipcAddress(), time.Second)
 		if e != nil {
@@ -782,6 +782,30 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				continue
 			}
 			if !ok {
+				if s.getSettings().YouTubeOnly {
+					// The cloud chose its own music player: cancel it and play
+					// the same request on YouTube Music instead.
+					if m, found := parseNativeMusic(ev.Response); found && ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID) {
+						takenOver = append(takenOver, ev.RequestID)
+						if len(takenOver) > 64 {
+							takenOver = takenOver[1:]
+						}
+						c.SetWriteDeadline(time.Now().Add(time.Second))
+						if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
+							log.Print("native music cancellation not confirmed")
+						}
+						action, query := takeoverAction(m, ev.Text)
+						log.Printf("voice takeover: %s from native %s", action, m.Kind)
+						go func() {
+							c, cancel := context.WithTimeout(ctx, 45*time.Second)
+							defer cancel()
+							if res := s.command(c, request{Action: action, Query: query}); res.Error != "" {
+								log.Print("voice takeover failed")
+							}
+						}()
+					}
+					continue
+				}
 				// Let a native music request take over without mixing two players.
 				if strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
 					s.mu.Lock()

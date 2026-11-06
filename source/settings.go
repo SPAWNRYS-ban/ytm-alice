@@ -22,6 +22,7 @@ type Settings struct {
 	AnnounceText   string            `json:"announce_text"`
 	AnnounceErrors bool              `json:"announce_errors"`
 	PlaybackLED    bool              `json:"playback_led"`
+	YouTubeOnly    bool              `json:"youtube_only"`
 	VoiceCommands  map[string]string `json:"voice_commands"`
 }
 
@@ -33,6 +34,7 @@ type SettingsPatch struct {
 	AnnounceText   *string           `json:"announce_text,omitempty"`
 	AnnounceErrors *bool             `json:"announce_errors,omitempty"`
 	PlaybackLED    *bool             `json:"playback_led,omitempty"`
+	YouTubeOnly    *bool             `json:"youtube_only,omitempty"`
 	VoiceCommands  map[string]string `json:"voice_commands"`
 }
 
@@ -193,6 +195,9 @@ func (s *Server) settingsCommand(r request) response {
 		if p.PlaybackLED != nil {
 			value.PlaybackLED = *p.PlaybackLED
 		}
+		if p.YouTubeOnly != nil {
+			value.YouTubeOnly = *p.YouTubeOnly
+		}
 		if p.VoiceCommands != nil {
 			value.VoiceCommands = cloneCommands(p.VoiceCommands)
 		}
@@ -231,7 +236,7 @@ func configRequest(args []string) (request, error) {
 	key, value := args[1], strings.Join(args[2:], " ")
 	var raw any = value
 	switch key {
-	case "radio", "shuffle", "playback_led", "announce_errors":
+	case "radio", "shuffle", "playback_led", "announce_errors", "youtube_only":
 		v, err := strconv.ParseBool(value)
 		if err != nil {
 			return request{}, errors.New("нужно true или false")
