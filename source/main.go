@@ -65,6 +65,7 @@ type State struct {
 type request struct {
 	Action     string         `json:"action"`
 	Query      string         `json:"query,omitempty"`
+	Single     bool           `json:"single,omitempty"` // play: queue only the best match
 	Index      int            `json:"index,omitempty"`
 	PositionMS int64          `json:"position_ms,omitempty"`
 	Auth       *Credentials   `json:"auth,omitempty"`
@@ -244,7 +245,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "play" && !isLikedQuery(r.Query) && !strings.HasPrefix(lower, "альбом ") && !strings.HasPrefix(lower, "плейлист ") && !strings.Contains(r.Query, "list=") {
 			index = 0
 		}
-		s.installQueueLocked(tracks, index)
+		s.installQueueLocked(singleTrack(tracks, r.Single), index)
 		s.state.PositionMS = 0
 		s.saveLocked()
 		s.mu.Unlock()
@@ -795,11 +796,14 @@ func (s *Server) voiceLoop(ctx context.Context) {
 							log.Print("native music cancellation not confirmed")
 						}
 						action, query := takeoverAction(m, ev.Text)
+						// Alice picked one song: play just that, radio continues.
+						// The lookup also returns other uploads of the same song.
+						single := action == "play" && m.Kind == "Track"
 						log.Printf("voice takeover: %s from native %s", action, m.Kind)
 						go func() {
 							c, cancel := context.WithTimeout(ctx, 45*time.Second)
 							defer cancel()
-							if res := s.command(c, request{Action: action, Query: query}); res.Error != "" {
+							if res := s.command(c, request{Action: action, Query: query, Single: single}); res.Error != "" {
 								log.Print("voice takeover failed")
 							}
 						}()

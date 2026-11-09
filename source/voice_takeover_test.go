@@ -63,3 +63,13 @@ func TestYouTubeOnlySetting(t *testing.T) {
 		t.Fatalf("youtube_only not settable: %+v %v", r.Settings, err)
 	}
 }
+
+func TestSingleTrackKeepsBestMatchOnly(t *testing.T) {
+	versions := []Track{{ID: "audio", Title: "Get Lucky"}, {ID: "clip", Title: "Get Lucky (Official Video)"}, {ID: "lyrics", Title: "Get Lucky (Lyrics)"}}
+	if got := singleTrack(versions, true); len(got) != 1 || got[0].ID != "audio" {
+		t.Fatalf("single request queue = %+v, want only the best match", got)
+	}
+	if got := singleTrack(versions, false); len(got) != 3 {
+		t.Fatalf("artist/album request queue = %d tracks, want all 3", len(got))
+	}
+}

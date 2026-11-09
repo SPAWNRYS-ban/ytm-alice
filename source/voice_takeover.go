@@ -93,3 +93,13 @@ func spokenMusicQuery(text string) string {
 	}
 	return q
 }
+
+// singleTrack keeps only the best match of a one-song request. Matching
+// results for "artist title" are mostly the same song again (official audio,
+// clip, lyrics, live), which made the request sound like it played on repeat.
+func singleTrack(tracks []Track, single bool) []Track {
+	if single && len(tracks) > 1 {
+		return tracks[:1]
+	}
+	return tracks
+}
