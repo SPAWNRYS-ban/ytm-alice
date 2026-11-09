@@ -85,6 +85,10 @@ func takeoverRequest(m nativeMusic, text string) request {
 	if action == "play" {
 		r.Spoken = spokenMusicQuery(text)
 	}
+	// When the catalog song does not match what was said, try the spoken
+	// words first; the catalog song stays the fallback (it also fixes
+	// misheard names such as «мистер брайтсайд» -> «Mr. Brightside»).
+	r.SpokenFirst = r.Single && r.Spoken != "" && !coveredBy(r.Spoken, m.Artist+" "+m.Title)
 	return r
 }
 
@@ -118,6 +122,27 @@ func spokenMusicQuery(text string) string {
 		words = append(words, w)
 	}
 	return strings.Join(words, " ")
+}
+
+// coveredBy reports that the catalog song contains the spoken words. The
+// catalog sometimes picks a different song: «madonna fragile» became
+// «Umideep — Madonna», a song named after the artist.
+func coveredBy(spoken, song string) bool {
+	words := searchWords(spoken)
+	if len(words) == 0 {
+		return true
+	}
+	have := map[string]bool{}
+	for _, w := range searchWords(song) {
+		have[w] = true
+	}
+	matched := 0
+	for _, w := range words {
+		if have[w] {
+			matched++
+		}
+	}
+	return float64(matched)/float64(len(words)) >= 0.8
 }
 
 // singleTrack keeps only the best match of a one-song request. Matching

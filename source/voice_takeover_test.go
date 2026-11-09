@@ -154,6 +154,31 @@ func TestMusicRequestSkipsHomeAndBareCommands(t *testing.T) {
 	}
 }
 
+func TestSpokenFirstWhenCatalogPickedAnotherSong(t *testing.T) {
+	for _, tc := range []struct {
+		artist, title, said string
+		first               bool
+	}{
+		// Recorded on a Mini 2: the catalog picked a different song.
+		{"Umideep", "Madonna", "включи madonna fragile", true},
+		{"Madonna", "Rain", "включи madonna трек everything", true},
+		// The catalog song matches, or corrects misheard words.
+		{"Паша Техник", "Bochka, Bass, Kolbaser", "включи колбасер", false},
+		{"Кино", "Группа крови", "включи группа крови", false},
+		{"Madonna", "Everything", "включи мадонна everything", false},
+	} {
+		r := takeoverRequest(nativeMusic{Kind: "Track", Artist: tc.artist, Title: tc.title}, tc.said)
+		if r.SpokenFirst != tc.first {
+			t.Errorf("%q vs %s — %s: spoken first = %v, want %v", tc.said, tc.artist, tc.title, r.SpokenFirst, tc.first)
+		}
+	}
+	// A misheard foreign title does not match the catalog, so the spoken words
+	// are tried first and the catalog song remains the fallback.
+	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "The Killers", Title: "Mr. Brightside"}, "включи мистер брайтсайд"); !r.SpokenFirst || r.Query != "The Killers Mr. Brightside" {
+		t.Fatalf("misheard title: %+v", r)
+	}
+}
+
 func TestSpokenQueryDropsFillerWordsInside(t *testing.T) {
 	for text, want := range map[string]string{
 		"включи madonna трек everything":         "madonna everything",

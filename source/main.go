@@ -68,13 +68,15 @@ type request struct {
 	Single bool   `json:"single,omitempty"` // play: queue only the best match
 	// play fallbacks when Query finds nothing: the catalog song by its title,
 	// then the spoken request.
-	Title      string         `json:"title,omitempty"`
-	Artist     string         `json:"artist,omitempty"`
-	Spoken     string         `json:"spoken,omitempty"`
-	Index      int            `json:"index,omitempty"`
-	PositionMS int64          `json:"position_ms,omitempty"`
-	Auth       *Credentials   `json:"auth,omitempty"`
-	Settings   *SettingsPatch `json:"settings,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Artist string `json:"artist,omitempty"`
+	Spoken string `json:"spoken,omitempty"`
+	// SpokenFirst: the catalog song does not match the spoken words.
+	SpokenFirst bool           `json:"spoken_first,omitempty"`
+	Index       int            `json:"index,omitempty"`
+	PositionMS  int64          `json:"position_ms,omitempty"`
+	Auth        *Credentials   `json:"auth,omitempty"`
+	Settings    *SettingsPatch `json:"settings,omitempty"`
 }
 type response struct {
 	State      *State           `json:"state,omitempty"`
@@ -234,14 +236,22 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
-			tracks, e = s.catalog.playLookup(ctx, r.Query, s.getSettings().musicOnlyActive())
-			step := "query"
+			musicOnly := s.getSettings().musicOnlyActive()
+			step := "spoken first"
+			e = errNoTracks
+			if r.SpokenFirst {
+				tracks, e = s.catalog.playLookup(ctx, r.Spoken, musicOnly)
+			}
+			if errors.Is(e, errNoTracks) {
+				step = "query"
+				tracks, e = s.catalog.playLookup(ctx, r.Query, musicOnly)
+			}
 			if errors.Is(e, errNoTracks) && r.Title != "" {
 				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title, s.getSettings().musicOnlyActive()); err == nil {
 					step, tracks, e = "title", found, nil
 				}
 			}
-			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query {
+			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query && !r.SpokenFirst {
 				if found, err := s.catalog.playLookup(ctx, r.Spoken, s.getSettings().musicOnlyActive()); err == nil {
 					step, tracks, e = "spoken", found, nil
 				}
