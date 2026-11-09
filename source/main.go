@@ -63,9 +63,14 @@ type State struct {
 	Auth        *AuthStatus `json:"auth,omitempty"`
 }
 type request struct {
-	Action     string         `json:"action"`
-	Query      string         `json:"query,omitempty"`
-	Single     bool           `json:"single,omitempty"` // play: queue only the best match
+	Action string `json:"action"`
+	Query  string `json:"query,omitempty"`
+	Single bool   `json:"single,omitempty"` // play: queue only the best match
+	// play fallbacks when Query finds nothing: the catalog song by its title,
+	// then the spoken request.
+	Title      string         `json:"title,omitempty"`
+	Artist     string         `json:"artist,omitempty"`
+	Spoken     string         `json:"spoken,omitempty"`
 	Index      int            `json:"index,omitempty"`
 	PositionMS int64          `json:"position_ms,omitempty"`
 	Auth       *Credentials   `json:"auth,omitempty"`
@@ -230,6 +235,18 @@ func (s *Server) command(ctx context.Context, r request) response {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
 			tracks, e = s.catalog.playLookup(ctx, r.Query, s.getSettings().musicOnlyActive())
+			if errors.Is(e, errNoTracks) && r.Title != "" {
+				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title, s.getSettings().musicOnlyActive()); err == nil {
+					log.Print("voice takeover: found by title")
+					tracks, e = found, nil
+				}
+			}
+			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query {
+				if found, err := s.catalog.playLookup(ctx, r.Spoken, s.getSettings().musicOnlyActive()); err == nil {
+					log.Print("voice takeover: found by spoken request")
+					tracks, e = found, nil
+				}
+			}
 		}
 		s.mu.Lock()
 		if s.generation != g || s.lookupGeneration != lookup {
@@ -795,15 +812,12 @@ func (s *Server) voiceLoop(ctx context.Context) {
 						if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
 							log.Print("native music cancellation not confirmed")
 						}
-						action, query := takeoverAction(m, ev.Text)
-						// Alice picked one song: play just that, radio continues.
-						// The lookup also returns other uploads of the same song.
-						single := action == "play" && m.Kind == "Track"
-						log.Printf("voice takeover: %s from native %s", action, m.Kind)
+						req := takeoverRequest(m, ev.Text)
+						log.Printf("voice takeover: %s from native %s", req.Action, m.Kind)
 						go func() {
 							c, cancel := context.WithTimeout(ctx, 45*time.Second)
 							defer cancel()
-							if res := s.command(c, request{Action: action, Query: query, Single: single}); res.Error != "" {
+							if res := s.command(c, req); res.Error != "" {
 								log.Print("voice takeover failed")
 							}
 						}()

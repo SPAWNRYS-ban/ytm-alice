@@ -73,3 +73,38 @@ func TestSingleTrackKeepsBestMatchOnly(t *testing.T) {
 		t.Fatalf("artist/album request queue = %d tracks, want all 3", len(got))
 	}
 }
+
+func TestTakeoverRequestCarriesTitleAndSpokenFallbacks(t *testing.T) {
+	r := takeoverRequest(nativeMusic{Kind: "Track", Title: "Bochka, Bass, Kolbaser", Artist: "Паша Техник"}, "алиса включи колбасер")
+	if r.Action != "play" || r.Query != "Паша Техник Bochka, Bass, Kolbaser" || !r.Single || r.Title != "Bochka, Bass, Kolbaser" || r.Artist != "Паша Техник" || r.Spoken != "колбасер" {
+		t.Fatalf("track request = %+v", r)
+	}
+	r = takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Кино"}, "алиса включи кино")
+	if r.Single || r.Title != "" || r.Query != "Кино" {
+		t.Fatalf("artist request = %+v", r)
+	}
+	if r = takeoverRequest(nativeMusic{Kind: "Radio", ID: "user:onyourwave"}, "алиса включи мою волну"); r.Action != "recommendations" || r.Spoken != "" {
+		t.Fatalf("wave request = %+v", r)
+	}
+}
+
+func TestSameTitleTrustsOnlyDistinctiveTitlesFromOtherArtists(t *testing.T) {
+	// Live YouTube Music results for «Bochka, Bass, Kolbaser»; Yandex credits
+	// the song to Паша Техник.
+	kolbaser := []Track{
+		{ID: "Lirc7fymdCA", Artists: "XS Project", Title: "Bochka, Bass, Kolbaser"},
+		{ID: "MaUQNCyscFQ", Artists: "XS Project", Title: "Bochka Bass Kolbaser (Slowed)"},
+		{ID: "qT1W9uXfep4", Artists: "3LEG", Title: "All Night Bochka"},
+		{ID: "-6_u0SnjyrE", Artists: "HoNoTo", Title: "Bochka Bass Kolbaser"},
+	}
+	if got := sameTitle("Паша Техник", "Bochka, Bass, Kolbaser", kolbaser); len(got) != 2 || got[0].ID != "Lirc7fymdCA" {
+		t.Fatalf("distinctive title: %+v", got)
+	}
+	lesnik := []Track{{ID: "abcdefghijk", Artists: "Другая группа", Title: "Лесник"}, {ID: "bcdefghijkl", Artists: "Король и Шут", Title: "Лесник"}}
+	if got := sameTitle("Король и Шут", "Лесник", lesnik); len(got) != 1 || got[0].ID != "bcdefghijkl" {
+		t.Fatalf("same artist must win: %+v", got)
+	}
+	if got := sameTitle("Король и Шут", "Лесник", lesnik[:1]); len(got) != 0 {
+		t.Fatalf("a one-word title of another artist was accepted: %+v", got)
+	}
+}

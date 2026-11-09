@@ -72,6 +72,21 @@ func takeoverAction(m nativeMusic, text string) (string, string) {
 	return "recommendations", ""
 }
 
+// takeoverRequest builds the YouTube command for the cloud's choice. Alice
+// picked one song: play just that (radio continues), by its catalog name, then
+// by its title alone, then by the spoken words.
+func takeoverRequest(m nativeMusic, text string) request {
+	action, query := takeoverAction(m, text)
+	r := request{Action: action, Query: query}
+	if action == "play" && m.Kind == "Track" && m.Title != "" {
+		r.Single, r.Title, r.Artist = true, m.Title, m.Artist
+	}
+	if action == "play" {
+		r.Spoken = spokenMusicQuery(text)
+	}
+	return r
+}
+
 // spokenMusicQuery strips the request words, leaving what to search for.
 // An empty result means «any music».
 func spokenMusicQuery(text string) string {

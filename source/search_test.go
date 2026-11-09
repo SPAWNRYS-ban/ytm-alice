@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 )
@@ -154,5 +155,26 @@ func TestMusicOnlyNeedsYouTubeOnly(t *testing.T) {
 		if got := (Settings{YouTubeOnly: tc.youtube, MusicOnly: tc.music}).musicOnlyActive(); got != tc.active {
 			t.Fatalf("youtube_only=%v music_only=%v: active=%v, want %v", tc.youtube, tc.music, got, tc.active)
 		}
+	}
+}
+
+func TestTitleLookupFindsSongCreditedToAnotherArtist(t *testing.T) {
+	c := newCatalog()
+	queries := []string{}
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		queries = append(queries, str(body["query"]))
+		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Bochka, Bass, Kolbaser"}}}}}, map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "XS Project", "navigationEndpoint": map[string]any{"browseEndpoint": map[string]any{"browseId": "UCxsproject"}}}}}}}}}}), nil
+	})}
+	if _, err := c.playLookup(context.Background(), "Паша Техник Bochka, Bass, Kolbaser", true); !errors.Is(err, errNoTracks) {
+		t.Fatalf("artist mismatch should not match by artist and title: %v", err)
+	}
+	got, err := c.titleLookup(context.Background(), "Паша Техник", "Bochka, Bass, Kolbaser", true)
+	if err != nil || len(got) != 1 || got[0].ID != "abcdefghijk" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if queries[len(queries)-1] != "Bochka, Bass, Kolbaser" {
+		t.Fatalf("title lookup searched %q", queries[len(queries)-1])
 	}
 }
