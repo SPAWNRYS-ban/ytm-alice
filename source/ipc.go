@@ -126,6 +126,7 @@ func ipcAddress() string {
 	}
 	return "127.0.0.1:9875"
 }
+
 // voiceIPCAddress is where voiceLoop subscribes to Alice events; tests point
 // it at a fake aliced.
 var voiceIPCAddress = ipcAddress
