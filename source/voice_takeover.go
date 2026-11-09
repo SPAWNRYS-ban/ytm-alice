@@ -67,6 +67,12 @@ func takeoverAction(m nativeMusic, text string) (string, string) {
 		return "play", strings.TrimSpace(m.Artist + " " + m.Title)
 	case m.Kind == "Artist" && m.Artist != "":
 		return "play", m.Artist
+	case m.Kind == "Album":
+		// The audio_play metadata names the first track, not the album, so
+		// search an album by the spoken words.
+		if query := albumQuery(text); query != "" {
+			return "play", query
+		}
 	}
 	if query := spokenMusicQuery(text); query != "" {
 		return "play", query
@@ -78,6 +84,12 @@ func takeoverAction(m nativeMusic, text string) (string, string) {
 // picked one song: play just that (radio continues), by its catalog name, then
 // by its title alone, then by the spoken words.
 func takeoverRequest(m nativeMusic, text string) request {
+	// «альбом» said aloud wins over the catalog's kind of answer.
+	if saysAlbum(text) {
+		if query := albumQuery(text); query != "" {
+			return request{Action: "play", Query: query, Spoken: spokenMusicQuery(text)}
+		}
+	}
 	action, query := takeoverAction(m, text)
 	r := request{Action: action, Query: query}
 	if action == "play" && m.Kind == "Track" && m.Title != "" {
@@ -237,4 +249,29 @@ func logSafe(message string) string {
 		message = string([]rune(message)[:200]) + "…"
 	}
 	return message
+}
+
+// albumQuery turns «troye sivan альбом she s the best» into an album search,
+// «альбом troye sivan she s the best»: searched as a song it found only the
+// title track.
+func albumQuery(text string) string {
+	words := []string{}
+	for _, w := range strings.Fields(spokenMusicQuery(text)) {
+		if w != "альбом" && w != "альбома" && w != "альбоме" {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return "альбом " + strings.Join(words, " ")
+}
+
+func saysAlbum(text string) bool {
+	for _, w := range strings.Fields(normalize(text)) {
+		if w == "альбом" || w == "альбома" || w == "альбоме" {
+			return true
+		}
+	}
+	return false
 }

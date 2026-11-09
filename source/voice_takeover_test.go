@@ -204,3 +204,30 @@ func TestLogSafeDropsURLs(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAlbumTakeoverSearchesAnAlbum(t *testing.T) {
+	// Recorded on a Mini 2: the cloud chose an Album; searched as a song the
+	// phrase found only the title track «She’s the Best».
+	for text, want := range map[string]string{
+		"включи troye sivan альбом she s the best": "альбом troye sivan she s the best",
+		"Включи альбом brat charli xcx":            "альбом brat charli xcx",
+		"включи brat": "альбом brat",
+	} {
+		if a, q := takeoverAction(nativeMusic{Kind: "Album", Title: "She’s the Best", Artist: "Troye Sivan"}, text); a != "play" || q != want {
+			t.Errorf("%q: got %s %q, want %q", text, a, q, want)
+		}
+	}
+	if r := takeoverRequest(nativeMusic{Kind: "Album"}, "включи troye sivan альбом she s the best"); r.Single || r.SpokenFirst {
+		t.Fatalf("an album is not one song: %+v", r)
+	}
+}
+
+func TestSaidAlbumWinsOverCatalogTrack(t *testing.T) {
+	r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Troye Sivan", Title: "She’s the Best"}, "Включи troye sivan альбом she s the best")
+	if r.Query != "альбом troye sivan she s the best" || r.Single || r.SpokenFirst || r.Title != "" {
+		t.Fatalf("%+v", r)
+	}
+	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Кино", Title: "Группа крови"}, "включи группа крови"); r.Query != "Кино Группа крови" || !r.Single {
+		t.Fatalf("no «альбом», catalog track: %+v", r)
+	}
+}
