@@ -96,7 +96,7 @@ func parseTile(tile any) (Track, bool) {
 		return Track{}, false
 	}
 	meta := get(tile, "metadata", "tileMetadataRenderer")
-	t := Track{ID: id, Title: text(get(meta, "title")), Artists: text(get(meta, "lines", 0, "lineRenderer", "items", 0, "lineItemRenderer", "text")), DurationMS: clockMS(tileDuration(tile)), ThumbnailURL: thumbnailURL(get(tile, "header", "tileHeaderRenderer"))}
+	t := Track{ID: id, Title: text(get(meta, "title")), Artists: text(get(meta, "lines", 0, "lineRenderer", "items", 0, "lineItemRenderer", "text")), DurationMS: clockMS(tileDuration(tile)), ThumbnailURL: thumbnailURL(get(tile, "header", "tileHeaderRenderer")), VideoType: musicVideoType(tile)}
 	if t.Title == "" {
 		t.Title = id
 	}

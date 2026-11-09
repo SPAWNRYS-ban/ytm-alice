@@ -32,12 +32,12 @@ func TestVoiceSearchFallsBackToPublicVideoOnlyWhenNeeded(t *testing.T) {
 		}
 		return jsonReply(map[string]any{"videoRenderer": map[string]any{"videoId": "bcdefghijkl", "title": map[string]any{"simpleText": "Yowai The Maid - Chasm"}, "lengthText": map[string]any{"simpleText": "3:24"}, "ownerText": map[string]any{"simpleText": "Music uploads"}}}), nil
 	})}
-	got, err := c.playLookup(context.Background(), "Yowai The Maid")
+	got, err := c.playLookup(context.Background(), "Yowai The Maid", false)
 	if err != nil || len(got) != 1 || got[0].ID != "bcdefghijkl" || calls != 2 {
 		t.Fatalf("%+v %v calls=%d", got, err, calls)
 	}
 	calls = 0
-	got, err = c.playLookup(context.Background(), "Yabai The Maid")
+	got, err = c.playLookup(context.Background(), "Yabai The Maid", false)
 	if err != nil || len(got) != 1 || calls != 1 {
 		t.Fatalf("matching Music song used fallback: %+v %v calls=%d", got, err, calls)
 	}
@@ -83,8 +83,66 @@ func TestCyrillicArtistSearchUsesLatinVideoQueryAndPrefersArtistPrefix(t *testin
 		}
 		return jsonReply(map[string]any{"videoRenderer": map[string]any{"videoId": id, "title": map[string]any{"simpleText": title}, "lengthText": map[string]any{"simpleText": "3:24"}}}), nil
 	})}
-	tracks, err := c.playLookup(context.Background(), "йовай зе мейд")
+	tracks, err := c.playLookup(context.Background(), "йовай зе мейд", false)
 	if err != nil || len(tracks) != 1 || tracks[0].ID != "bcdefghijkl" || calls != 3 {
 		t.Fatalf("%+v %v calls=%d", tracks, err, calls)
+	}
+}
+
+func TestMusicOnlyVoiceSearchNeverSearchesVideos(t *testing.T) {
+	c := newCatalog()
+	hosts := []string{}
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		hosts = append(hosts, r.URL.Host)
+		// Music has the song only under a longer title, so the strict prefix
+		// match fails and a looser Music match must be used instead of video.
+		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Get Lucky (feat. Pharrell Williams) - Daft Punk"}}}}}}}}), nil
+	})}
+	got, err := c.playLookup(context.Background(), "Daft Punk Get Lucky", true)
+	if err != nil || len(got) != 1 || got[0].ID != "abcdefghijk" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	for _, host := range hosts {
+		if host != "music.youtube.com" {
+			t.Fatalf("music-only search queried %s", host)
+		}
+	}
+	hosts = nil
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		hosts = append(hosts, r.URL.Host)
+		return jsonReply(map[string]any{}), nil
+	})}
+	if _, err := c.playLookup(context.Background(), "missing artist", true); err == nil {
+		t.Fatal("unmatched music-only search must fail instead of playing a video")
+	}
+	for _, host := range hosts {
+		if host != "music.youtube.com" {
+			t.Fatalf("music-only search queried %s", host)
+		}
+	}
+}
+
+func TestMusicOnlyKeepsAudioTracksOfTVRadio(t *testing.T) {
+	tile := func(id, title, kind string) map[string]any {
+		return map[string]any{"tileRenderer": map[string]any{
+			"contentType": "TILE_CONTENT_TYPE_VIDEO",
+			"onSelectCommand": map[string]any{"watchEndpoint": map[string]any{"videoId": id, "playlistId": "RDAMVMm2zUrruKjDQ",
+				"watchEndpointMusicSupportedConfigs": map[string]any{"watchEndpointMusicConfig": map[string]any{"musicVideoType": kind}}}},
+			"metadata": map[string]any{"tileMetadataRenderer": map[string]any{"title": map[string]any{"simpleText": title}}},
+		}}
+	}
+	root := map[string]any{"contents": []any{
+		tile("hTWKbfoikeg", "Smells Like Teen Spirit", "MUSIC_VIDEO_TYPE_OMV"),
+		tile("ljUtuoFt-8c", "Smells Like Teen Spirit", "MUSIC_VIDEO_TYPE_ATV"),
+		tile("abcdefghijk", "Fan upload", "MUSIC_VIDEO_TYPE_UGC"),
+		tile("bcdefghijkl", "No type", ""),
+	}}
+	all := parseTileQueue(root, "RDAMVMm2zUrruKjDQ")
+	if len(all) != 4 || all[0].VideoType != "MUSIC_VIDEO_TYPE_OMV" || all[1].VideoType != "MUSIC_VIDEO_TYPE_ATV" {
+		t.Fatalf("parsed %+v", all)
+	}
+	got := onlyMusic(all)
+	if len(got) != 2 || got[0].ID != "ljUtuoFt-8c" || got[1].ID != "bcdefghijkl" {
+		t.Fatalf("music only kept %+v, want the audio track and the untyped one", got)
 	}
 }

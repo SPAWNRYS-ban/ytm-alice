@@ -97,7 +97,7 @@ func relevantSongs(query string, tracks []Track) []Track {
 
 // Voice playback prefers matching Music songs, then matching public YouTube
 // videos. Browsing/search UI keeps its complete Music results.
-func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error) {
+func (c *Catalog) playLookup(ctx context.Context, query string, musicOnly bool) ([]Track, error) {
 	tracks, err := c.lookup(ctx, query)
 	q := strings.TrimSpace(query)
 	parsed, _ := url.Parse(q)
@@ -108,10 +108,20 @@ func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error)
 	if err != nil && !errors.Is(err, errNoTracks) {
 		return nil, err
 	}
+	if musicOnly {
+		tracks = onlyMusic(tracks)
+	}
 	if matching := relevantSongs(q, tracks); len(matching) > 0 {
 		return matching, nil
 	}
-	videos, err := c.searchVideos(ctx, q)
+	if musicOnly {
+		// A looser match among Music audio tracks, never a video.
+		if matching := relevantTracks(q, tracks); len(matching) > 0 {
+			return matching, nil
+		}
+		return nil, errNoTracks
+	}
+	found, err := c.searchVideos(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -121,13 +131,13 @@ func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error)
 	if strings.IndexFunc(q, func(ch rune) bool { return unicode.In(ch, unicode.Cyrillic) }) >= 0 {
 		alternative, alternativeErr := c.searchVideos(ctx, strings.Join(searchWords(q), " "))
 		if alternativeErr == nil {
-			videos = append(videos, alternative...)
+			found = append(found, alternative...)
 		}
 	}
-	if matching := relevantSongs(q, videos); len(matching) > 0 {
+	if matching := relevantSongs(q, found); len(matching) > 0 {
 		return matching, nil
 	}
-	if matching := relevantTracks(q, videos); len(matching) > 0 {
+	if matching := relevantTracks(q, found); len(matching) > 0 {
 		return matching, nil
 	}
 	return nil, errNoTracks

@@ -20,7 +20,7 @@ func TestPublicReleaseSmoke(t *testing.T) {
 		t.Fatal("TV sign-in client discovery:", err)
 	}
 	for _, query := range []string{"Yowai The Maid", "йовай зе мейд"} {
-		tracks, err := c.playLookup(ctx, query)
+		tracks, err := c.playLookup(ctx, query, false)
 		if err != nil || len(tracks) == 0 {
 			t.Fatalf("public video fallback %q: %v", query, err)
 		}

@@ -577,7 +577,7 @@ def config_request(arguments):
     if len(arguments) < 3 or arguments[0] != 'set':
         raise ClientError('config get | config set КЛЮЧ ЗНАЧЕНИЕ')
     key, value = arguments[1], ' '.join(arguments[2:])
-    if key in ('radio', 'shuffle', 'playback_led', 'announce_errors', 'youtube_only'):
+    if key in ('radio', 'shuffle', 'playback_led', 'announce_errors', 'youtube_only', 'music_only'):
         if value.lower() not in ('true', 'false'):
             raise ClientError('нужно true или false')
         value = value.lower() == 'true'

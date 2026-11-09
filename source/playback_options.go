@@ -90,12 +90,16 @@ func (s *Server) fillRadio(g uint64, id string) {
 	if s.generation != g || s.closing || s.queueCast || !s.settingsLocked().Radio {
 		return
 	}
+	radio := task.tracks
+	if s.settingsLocked().MusicOnly {
+		radio = onlyMusic(radio)
+	}
 	seen := map[string]bool{}
 	for _, track := range s.state.Queue {
 		seen[track.ID] = true
 	}
 	added := []Track{}
-	for _, track := range task.tracks {
+	for _, track := range radio {
 		if !seen[track.ID] {
 			seen[track.ID] = true
 			added = append(added, track)
