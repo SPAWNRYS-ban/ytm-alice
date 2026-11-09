@@ -107,7 +107,17 @@ func spokenMusicQuery(text string) string {
 	case "музыку", "песню", "трек", "что-нибудь", "мою волну", "волну", "мою музыку":
 		return ""
 	}
-	return q
+	// «madonna трек everything»: a filler word inside the phrase is not part
+	// of the artist or title either.
+	words := []string{}
+	for _, w := range strings.Fields(q) {
+		switch w {
+		case "трек", "песню", "песня", "композицию", "композиция":
+			continue
+		}
+		words = append(words, w)
+	}
+	return strings.Join(words, " ")
 }
 
 // singleTrack keeps only the best match of a one-song request. Matching

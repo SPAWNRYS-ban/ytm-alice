@@ -153,3 +153,16 @@ func TestMusicRequestSkipsHomeAndBareCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestSpokenQueryDropsFillerWordsInside(t *testing.T) {
+	for text, want := range map[string]string{
+		"включи madonna трек everything":         "madonna everything",
+		"Алиса, включи madonna песня everything": "madonna everything",
+		"включи трек numb":                       "numb",
+		"включи песню":                           "",
+	} {
+		if got := spokenMusicQuery(text); got != want {
+			t.Errorf("%q: got %q, want %q", text, got, want)
+		}
+	}
+}
