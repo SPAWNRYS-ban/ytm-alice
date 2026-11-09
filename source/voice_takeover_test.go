@@ -39,7 +39,7 @@ func TestNativeMusicIsReplayedOnYouTube(t *testing.T) {
 		{nativeWave, "Включи мою волну", "recommendations", ""},
 		{nativeArtist, "Включи linkin park", "play", "Linkin Park"},
 		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"title":"Numb","subtitle":"Linkin Park","glagol_metadata":{"music_metadata":{"type":"Track"}}}}}]}}`, "включи намб", "play", "Linkin Park Numb"},
-		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"glagol_metadata":{"music_metadata":{"id":"genre:rock","type":"Radio"}}}}}]}}`, "Алиса, поставь рок", "play", "рок"},
+		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"glagol_metadata":{"music_metadata":{"id":"genre:rock","type":"Radio"}}}}}]}}`, "Алиса, поставь рок", "play", "плейлист рок"},
 		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"glagol_metadata":{"music_metadata":{"type":"Generative"}}}}}]}}`, "включи что-нибудь", "recommendations", ""},
 	} {
 		m, ok := parseNativeMusic([]byte(tc.response))
@@ -229,5 +229,21 @@ func TestSaidAlbumWinsOverCatalogTrack(t *testing.T) {
 	}
 	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Кино", Title: "Группа крови"}, "включи группа крови"); r.Query != "Кино Группа крови" || !r.Single {
 		t.Fatalf("no «альбом», catalog track: %+v", r)
+	}
+}
+
+func TestGenresAndChartsBecomePlaylists(t *testing.T) {
+	for _, tc := range []struct{ kind, text, action, query string }{
+		{"Radio", "включи рок", "play", "плейлист рок"},
+		{"Radio", "включи что-нибудь весёлое", "play", "плейлист весёлое"},
+		{"Playlist", "включи чарт", "play", "плейлист чарт"},
+		{"Radio", "включи радио", "recommendations", ""},
+	} {
+		if a, q := takeoverAction(nativeMusic{Kind: tc.kind, ID: "genre:x"}, tc.text); a != tc.action || q != tc.query {
+			t.Errorf("%q (%s) => %s %q, want %s %q", tc.text, tc.kind, a, q, tc.action, tc.query)
+		}
+	}
+	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "A", Title: "B"}, "включи плейлист для бега"); r.Query != "плейлист для бега" || r.Single {
+		t.Fatalf("said «плейлист»: %+v", r)
 	}
 }

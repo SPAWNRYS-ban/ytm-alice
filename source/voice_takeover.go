@@ -67,6 +67,14 @@ func takeoverAction(m nativeMusic, text string) (string, string) {
 		return "play", strings.TrimSpace(m.Artist + " " + m.Title)
 	case m.Kind == "Artist" && m.Artist != "":
 		return "play", m.Artist
+	case m.Kind == "Playlist" || m.Kind == "Radio":
+		// A genre, mood or chart: YouTube Music has playlists, not the
+		// catalog's radio. «включи рок» searched as a song played «Лето,
+		// плавки, рок-н-ролл».
+		if query := playlistQuery(text); query != "" {
+			return "play", query
+		}
+		return "recommendations", ""
 	case m.Kind == "Album":
 		// The audio_play metadata names the first track, not the album, so
 		// search an album by the spoken words.
@@ -84,9 +92,14 @@ func takeoverAction(m nativeMusic, text string) (string, string) {
 // picked one song: play just that (radio continues), by its catalog name, then
 // by its title alone, then by the spoken words.
 func takeoverRequest(m nativeMusic, text string) request {
-	// «альбом» said aloud wins over the catalog's kind of answer.
+	// «альбом» or «плейлист» said aloud wins over the catalog's kind of answer.
 	if saysAlbum(text) {
 		if query := albumQuery(text); query != "" {
+			return request{Action: "play", Query: query, Spoken: spokenMusicQuery(text)}
+		}
+	}
+	if saysPlaylist(text) {
+		if query := playlistQuery(text); query != "" {
 			return request{Action: "play", Query: query, Spoken: spokenMusicQuery(text)}
 		}
 	}
@@ -270,6 +283,33 @@ func albumQuery(text string) string {
 func saysAlbum(text string) bool {
 	for _, w := range strings.Fields(normalize(text)) {
 		if w == "альбом" || w == "альбома" || w == "альбоме" {
+			return true
+		}
+	}
+	return false
+}
+
+// playlistQuery turns a genre, mood or chart request into a playlist search:
+// «включи рок» -> «плейлист рок», «включи что-нибудь весёлое» -> «плейлист
+// весёлое».
+func playlistQuery(text string) string {
+	words := []string{}
+	for _, w := range strings.Fields(spokenMusicQuery(text)) {
+		switch w {
+		case "плейлист", "плейлиста", "радио", "что-нибудь", "что-то", "музыку", "музыка":
+			continue
+		}
+		words = append(words, w)
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return "плейлист " + strings.Join(words, " ")
+}
+
+func saysPlaylist(text string) bool {
+	for _, w := range strings.Fields(normalize(text)) {
+		if w == "плейлист" || w == "плейлиста" {
 			return true
 		}
 	}
