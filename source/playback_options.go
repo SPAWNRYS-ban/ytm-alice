@@ -91,11 +91,7 @@ func (s *Server) fillRadio(g uint64, id string) {
 	if s.generation != g || s.closing || s.queueCast || !s.settingsLocked().Radio {
 		return
 	}
-	radio := task.tracks
-	if s.settingsLocked().musicOnlyActive() {
-		radio = onlyMusic(radio)
-	}
-	added := newRadioTracks(s.state.Queue, radio)
+	added := newRadioTracks(s.state.Queue, task.tracks)
 	s.queueOrder = append(s.queueOrder, added...)
 	if s.settingsLocked().Shuffle {
 		rand.Shuffle(len(added), func(i, j int) { added[i], added[j] = added[j], added[i] })

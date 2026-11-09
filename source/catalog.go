@@ -25,42 +25,6 @@ type Track struct {
 	Artists      string `json:"artists"`
 	DurationMS   int64  `json:"duration_ms"`
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
-	// VideoType is YouTube's musicVideoType when known: MUSIC_VIDEO_TYPE_ATV
-	// for a Music audio track, OMV/UGC/... for clips and other videos.
-	VideoType string `json:"video_type,omitempty"`
-}
-
-// musicVideoType finds the musicVideoType of one renderer, if present.
-func musicVideoType(renderer any) string {
-	switch v := renderer.(type) {
-	case map[string]any:
-		if s, ok := v["musicVideoType"].(string); ok {
-			return s
-		}
-		for _, k := range sortedKeys(v) {
-			if s := musicVideoType(v[k]); s != "" {
-				return s
-			}
-		}
-	case []any:
-		for _, item := range v {
-			if s := musicVideoType(item); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
-}
-
-// onlyMusic drops clips and other videos, keeping tracks of unknown type.
-func onlyMusic(tracks []Track) []Track {
-	out := []Track{}
-	for _, t := range tracks {
-		if t.VideoType == "" || t.VideoType == "MUSIC_VIDEO_TYPE_ATV" {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // Only return image URLs. Image bytes are fetched and cached by the browser.
@@ -274,7 +238,7 @@ func parseTracks(root any) []Track {
 						if title == "" {
 							title = id
 						}
-						t := Track{ID: id, Title: title, Artists: artists, DurationMS: clockMS(duration), ThumbnailURL: thumbnailURL(z), VideoType: musicVideoType(z)}
+						t := Track{ID: id, Title: title, Artists: artists, DurationMS: clockMS(duration), ThumbnailURL: thumbnailURL(z)}
 						if t.ThumbnailURL == "" {
 							t.ThumbnailURL = fallbackThumbnail(id)
 						}

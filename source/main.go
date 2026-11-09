@@ -236,23 +236,22 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
-			musicOnly := s.getSettings().musicOnlyActive()
 			step := "spoken first"
 			e = errNoTracks
 			if r.SpokenFirst {
-				tracks, e = s.catalog.playLookup(ctx, r.Spoken, musicOnly)
+				tracks, e = s.catalog.playLookup(ctx, r.Spoken)
 			}
 			if errors.Is(e, errNoTracks) {
 				step = "query"
-				tracks, e = s.catalog.playLookup(ctx, r.Query, musicOnly)
+				tracks, e = s.catalog.playLookup(ctx, r.Query)
 			}
 			if errors.Is(e, errNoTracks) && r.Title != "" {
-				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title, s.getSettings().musicOnlyActive()); err == nil {
+				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title); err == nil {
 					step, tracks, e = "title", found, nil
 				}
 			}
 			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query && !r.SpokenFirst {
-				if found, err := s.catalog.playLookup(ctx, r.Spoken, s.getSettings().musicOnlyActive()); err == nil {
+				if found, err := s.catalog.playLookup(ctx, r.Spoken); err == nil {
 					step, tracks, e = "spoken", found, nil
 				}
 			}

@@ -271,14 +271,9 @@ function addVoiceAlias(phrase='',action='play') {
  const remove=document.createElement('button');remove.type='button';remove.className='text-button';remove.textContent='Удалить';remove.onclick=()=>row.remove();
  row.append(input,select,remove);$('voice-aliases').append(row);
 }
-function syncMusicOnly(){
- const on=$('youtube-only').checked;$('music-only').disabled=!on;$('music-only').closest('label').classList.toggle('inactive',!on);
- $('music-only-help').textContent=on?'Без клипов и видео: в голосовом поиске и в рекомендациях — только треки YouTube Music':'Работает вместе с «Вся музыка через YouTube»';
-}
-$('youtube-only').addEventListener('change',syncMusicOnly);
 async function loadSettings(){
  const data=await command('config-get');settings=data.settings;
- $('radio').checked=settings.radio;$('shuffle').checked=settings.shuffle;$('announce-errors').checked=settings.announce_errors;$('youtube-only').checked=settings.youtube_only;$('music-only').checked=settings.music_only;syncMusicOnly();
+ $('radio').checked=settings.radio;$('shuffle').checked=settings.shuffle;$('announce-errors').checked=settings.announce_errors;$('youtube-only').checked=settings.youtube_only;
  $('playback-led').checked=settings.playback_led;$('playback-led').disabled=!data.led_control;
  $('led-help').textContent=data.led_control?'Индикация диалога Алисы сохраняется':'Управление подсветкой этой модели пока недоступно';
  $('announce-text').value=settings.announce_text;
@@ -300,7 +295,7 @@ $('settings-form').addEventListener('submit',event=>{
   if(!settings)throw new Error('Настройки ещё загружаются.');
   const port=Number($('web-port').value);if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Укажи порт от 1 до 65535.');
   const host=settings.web_addr==='off'?'':settings.web_addr.slice(0,settings.web_addr.lastIndexOf(':'));
-  const next={web_hosts:$('web-hosts').value.split(',').map(value=>value.trim().toLowerCase()).filter(Boolean),web_addr:host+':'+port,radio:$('radio').checked,shuffle:$('shuffle').checked,announce_text:$('announce-text').value,announce_errors:$('announce-errors').checked,youtube_only:$('youtube-only').checked,music_only:$('music-only').checked,playback_led:$('playback-led').checked};
+  const next={web_hosts:$('web-hosts').value.split(',').map(value=>value.trim().toLowerCase()).filter(Boolean),web_addr:host+':'+port,radio:$('radio').checked,shuffle:$('shuffle').checked,announce_text:$('announce-text').value,announce_errors:$('announce-errors').checked,youtube_only:$('youtube-only').checked,playback_led:$('playback-led').checked};
   if($('playback-led').disabled)delete next.playback_led;
   const oldPort=settings.web_addr;const oldShuffle=state?.shuffle;
   const result=await command('config-set',{settings:next});settings=result.settings;

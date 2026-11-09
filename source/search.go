@@ -97,7 +97,7 @@ func relevantSongs(query string, tracks []Track) []Track {
 
 // Voice playback prefers matching Music songs, then matching public YouTube
 // videos. Browsing/search UI keeps its complete Music results.
-func (c *Catalog) playLookup(ctx context.Context, query string, musicOnly bool) ([]Track, error) {
+func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error) {
 	tracks, err := c.lookup(ctx, query)
 	q := strings.TrimSpace(query)
 	parsed, _ := url.Parse(q)
@@ -108,20 +108,10 @@ func (c *Catalog) playLookup(ctx context.Context, query string, musicOnly bool) 
 	if err != nil && !errors.Is(err, errNoTracks) {
 		return nil, err
 	}
-	if musicOnly {
-		tracks = onlyMusic(tracks)
-	}
 	if matching := relevantSongs(q, tracks); len(matching) > 0 {
 		return matching, nil
 	}
-	if musicOnly {
-		// A looser match among Music audio tracks, never a video.
-		if matching := relevantTracks(q, tracks); len(matching) > 0 {
-			return matching, nil
-		}
-		return nil, errNoTracks
-	}
-	found, err := c.searchVideos(ctx, q)
+	videos, err := c.searchVideos(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +121,13 @@ func (c *Catalog) playLookup(ctx context.Context, query string, musicOnly bool) 
 	if strings.IndexFunc(q, func(ch rune) bool { return unicode.In(ch, unicode.Cyrillic) }) >= 0 {
 		alternative, alternativeErr := c.searchVideos(ctx, strings.Join(searchWords(q), " "))
 		if alternativeErr == nil {
-			found = append(found, alternative...)
+			videos = append(videos, alternative...)
 		}
 	}
-	if matching := relevantSongs(q, found); len(matching) > 0 {
+	if matching := relevantSongs(q, videos); len(matching) > 0 {
 		return matching, nil
 	}
-	if matching := relevantTracks(q, found); len(matching) > 0 {
+	if matching := relevantTracks(q, videos); len(matching) > 0 {
 		return matching, nil
 	}
 	return nil, errNoTracks
@@ -148,7 +138,7 @@ func (c *Catalog) playLookup(ctx context.Context, query string, musicOnly bool) 
 // Kolbaser» under Паша Техник, YouTube Music under XS Project). The same
 // artist wins; another artist is accepted only for a title of two or more
 // words, so a short common title never plays someone else's song.
-func (c *Catalog) titleLookup(ctx context.Context, artist, title string, musicOnly bool) ([]Track, error) {
+func (c *Catalog) titleLookup(ctx context.Context, artist, title string) ([]Track, error) {
 	words := searchWords(title)
 	if len(words) == 0 {
 		return nil, errNoTracks
@@ -156,9 +146,6 @@ func (c *Catalog) titleLookup(ctx context.Context, artist, title string, musicOn
 	tracks, err := c.lookup(ctx, title)
 	if err != nil && !errors.Is(err, errNoTracks) {
 		return nil, err
-	}
-	if musicOnly {
-		tracks = onlyMusic(tracks)
 	}
 	if found := sameTitle(artist, title, tracks); len(found) > 0 {
 		return found, nil
