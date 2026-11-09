@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -117,4 +118,20 @@ func singleTrack(tracks []Track, single bool) []Track {
 		return tracks[:1]
 	}
 	return tracks
+}
+
+// takeoverLookupLog records what Alice's catalog asked for and what YouTube
+// Music played instead, so a wrong or missing song can be traced.
+func takeoverLookupLog(r request, step string, tracks []Track, err error) string {
+	asked := strconv.Quote(r.Query)
+	if r.Title != "" {
+		asked = strconv.Quote(strings.TrimSpace(r.Artist + " — " + r.Title))
+	}
+	if r.Spoken != "" {
+		asked += " (said " + strconv.Quote(r.Spoken) + ")"
+	}
+	if err != nil || len(tracks) == 0 {
+		return "voice takeover: " + asked + " not found"
+	}
+	return "voice takeover: " + asked + " -> " + strconv.Quote(tracks[0].Artists+" — "+tracks[0].Title) + " by " + step
 }

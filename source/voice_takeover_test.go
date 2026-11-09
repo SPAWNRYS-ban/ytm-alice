@@ -108,3 +108,15 @@ func TestSameTitleTrustsOnlyDistinctiveTitlesFromOtherArtists(t *testing.T) {
 		t.Fatalf("a one-word title of another artist was accepted: %+v", got)
 	}
 }
+
+func TestTakeoverLookupLogNamesRequestResultAndStep(t *testing.T) {
+	r := request{Query: "Паша Техник Bochka, Bass, Kolbaser", Title: "Bochka, Bass, Kolbaser", Artist: "Паша Техник", Spoken: "колбасер"}
+	got := takeoverLookupLog(r, "title", []Track{{Artists: "XS Project", Title: "Bochka, Bass, Kolbaser"}}, nil)
+	want := `voice takeover: "Паша Техник — Bochka, Bass, Kolbaser" (said "колбасер") -> "XS Project — Bochka, Bass, Kolbaser" by title`
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	if got := takeoverLookupLog(request{Query: "кино", Spoken: "кино"}, "query", nil, errNoTracks); got != `voice takeover: "кино" (said "кино") not found` {
+		t.Fatal(got)
+	}
+}

@@ -235,17 +235,19 @@ func (s *Server) command(ctx context.Context, r request) response {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
 			tracks, e = s.catalog.playLookup(ctx, r.Query, s.getSettings().musicOnlyActive())
+			step := "query"
 			if errors.Is(e, errNoTracks) && r.Title != "" {
 				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title, s.getSettings().musicOnlyActive()); err == nil {
-					log.Print("voice takeover: found by title")
-					tracks, e = found, nil
+					step, tracks, e = "title", found, nil
 				}
 			}
 			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query {
 				if found, err := s.catalog.playLookup(ctx, r.Spoken, s.getSettings().musicOnlyActive()); err == nil {
-					log.Print("voice takeover: found by spoken request")
-					tracks, e = found, nil
+					step, tracks, e = "spoken", found, nil
 				}
+			}
+			if r.Title != "" || r.Spoken != "" {
+				log.Print(takeoverLookupLog(r, step, tracks, e))
 			}
 		}
 		s.mu.Lock()
