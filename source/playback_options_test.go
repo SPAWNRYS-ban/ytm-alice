@@ -28,3 +28,23 @@ func TestRadioSkipsVideoVersionsOfTheSameSong(t *testing.T) {
 		}
 	}
 }
+
+func TestAlbumTracksTakeTheHeaderArtist(t *testing.T) {
+	// Shape of a YouTube Music album page (Born To Die): the header names the
+	// artist, the track rows do not.
+	page := map[string]any{"contents": map[string]any{"twoColumnBrowseResultsRenderer": map[string]any{
+		"tabs": []any{map[string]any{"tabRenderer": map[string]any{"content": map[string]any{"sectionListRenderer": map[string]any{"contents": []any{
+			map[string]any{"musicResponsiveHeaderRenderer": map[string]any{
+				"title":            map[string]any{"runs": []any{map[string]any{"text": "Born To Die"}}},
+				"straplineTextOne": map[string]any{"runs": []any{map[string]any{"text": "Lana Del Rey"}}},
+			}},
+		}}}}}},
+	}}}
+	if got := albumArtist(page); got != "Lana Del Rey" {
+		t.Fatalf("album artist = %q", got)
+	}
+	tracks := withArtist([]Track{{ID: "a", Title: "Born To Die"}, {ID: "b", Title: "Duet", Artists: "Lana Del Rey, Guest"}}, "Lana Del Rey")
+	if tracks[0].Artists != "Lana Del Rey" || tracks[1].Artists != "Lana Del Rey, Guest" {
+		t.Fatalf("%+v", tracks)
+	}
+}

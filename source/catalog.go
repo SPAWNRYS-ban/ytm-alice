@@ -456,7 +456,11 @@ func findBrowse(x any, kind string) string {
 func (c *Catalog) browse(ctx context.Context, id string) ([]Track, error) {
 	tracks := []Track{}
 	seen := map[string]bool{}
+	artist := ""
 	err := c.browsePages(ctx, id, func(page map[string]any) {
+		if artist == "" && strings.HasPrefix(id, "MPREb_") {
+			artist = albumArtist(page)
+		}
 		for _, track := range parseTracks(page) {
 			if !seen[track.ID] {
 				seen[track.ID] = true
@@ -467,7 +471,48 @@ func (c *Catalog) browse(ctx context.Context, id string) ([]Track, error) {
 	if err != nil {
 		return nil, err
 	}
-	return tracks, nil
+	return withArtist(tracks, artist), nil
+}
+
+// albumArtist reads the artist from an album page header. Album track rows
+// carry only titles, which left «— Born To Die» in the queue and in «что
+// играет».
+func albumArtist(page any) string {
+	var found string
+	var walk func(any)
+	walk = func(x any) {
+		if found != "" {
+			return
+		}
+		switch v := x.(type) {
+		case map[string]any:
+			if h, ok := v["musicResponsiveHeaderRenderer"]; ok {
+				found = strings.TrimSpace(text(get(h, "straplineTextOne")))
+				return
+			}
+			for _, k := range sortedKeys(v) {
+				walk(v[k])
+			}
+		case []any:
+			for _, item := range v {
+				walk(item)
+			}
+		}
+	}
+	walk(page)
+	return found
+}
+
+func withArtist(tracks []Track, artist string) []Track {
+	if artist == "" {
+		return tracks
+	}
+	for i := range tracks {
+		if strings.TrimSpace(tracks[i].Artists) == "" {
+			tracks[i].Artists = artist
+		}
+	}
+	return tracks
 }
 func (c *Catalog) radio(ctx context.Context, id string) []Track {
 	auth := c.credentials()
