@@ -23,4 +23,4 @@
 
 #settings-form input[type=text],#settings-form input[type=number],#settings-form select,#voice-commands-form input[type=text],#voice-commands-form select{width:100%;padding:11px 12px;background:#111315;color:var(--text);border:1px solid #38393f;border-radius:7px;font:inherit;font-size:13px}#settings-form>input{margin:8px 0 18px}.voice-alias input,.voice-alias select{margin:0} .voice-alias{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:center;margin:12px 0}.voice-alias input,.voice-alias select{min-width:0;width:100%}#settings-form .button-row{margin-top:20px}@media(max-width:650px){.voice-alias{grid-template-columns:1fr}.section-heading>.button-row{flex-wrap:wrap}}
 
-.voice-commands-editor{grid-column:1/-1}.voice-commands-editor .button-row{margin-top:20px}
+.voice-commands-editor{grid-column:1/-1}.voice-commands-editor .button-row{margin-top:20px}input[role=switch]:disabled{cursor:default}.toggle-label.nested{padding-left:18px}.toggle-label.inactive{opacity:.45}

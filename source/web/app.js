@@ -271,9 +271,14 @@ function addVoiceAlias(phrase='',action='play') {
  const remove=document.createElement('button');remove.type='button';remove.className='text-button';remove.textContent='Удалить';remove.onclick=()=>row.remove();
  row.append(input,select,remove);$('voice-aliases').append(row);
 }
+function syncMusicOnly(){
+ const on=$('youtube-only').checked;$('music-only').disabled=!on;$('music-only').closest('label').classList.toggle('inactive',!on);
+ $('music-only-help').textContent=on?'Без клипов и видео: в голосовом поиске и в рекомендациях — только треки YouTube Music':'Работает вместе с «Вся музыка через YouTube»';
+}
+$('youtube-only').addEventListener('change',syncMusicOnly);
 async function loadSettings(){
  const data=await command('config-get');settings=data.settings;
- $('radio').checked=settings.radio;$('shuffle').checked=settings.shuffle;$('announce-errors').checked=settings.announce_errors;$('youtube-only').checked=settings.youtube_only;$('music-only').checked=settings.music_only;
+ $('radio').checked=settings.radio;$('shuffle').checked=settings.shuffle;$('announce-errors').checked=settings.announce_errors;$('youtube-only').checked=settings.youtube_only;$('music-only').checked=settings.music_only;syncMusicOnly();
  $('playback-led').checked=settings.playback_led;$('playback-led').disabled=!data.led_control;
  $('led-help').textContent=data.led_control?'Индикация диалога Алисы сохраняется':'Управление подсветкой этой модели пока недоступно';
  $('announce-text').value=settings.announce_text;

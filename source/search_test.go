@@ -146,3 +146,13 @@ func TestMusicOnlyKeepsAudioTracksOfTVRadio(t *testing.T) {
 		t.Fatalf("music only kept %+v, want the audio track and the untyped one", got)
 	}
 }
+
+func TestMusicOnlyNeedsYouTubeOnly(t *testing.T) {
+	for _, tc := range []struct{ youtube, music, active bool }{
+		{false, false, false}, {false, true, false}, {true, false, false}, {true, true, true},
+	} {
+		if got := (Settings{YouTubeOnly: tc.youtube, MusicOnly: tc.music}).musicOnlyActive(); got != tc.active {
+			t.Fatalf("youtube_only=%v music_only=%v: active=%v, want %v", tc.youtube, tc.music, got, tc.active)
+		}
+	}
+}

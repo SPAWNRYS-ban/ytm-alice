@@ -229,7 +229,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
 		} else {
-			tracks, e = s.catalog.playLookup(ctx, r.Query, s.getSettings().MusicOnly)
+			tracks, e = s.catalog.playLookup(ctx, r.Query, s.getSettings().musicOnlyActive())
 		}
 		s.mu.Lock()
 		if s.generation != g || s.lookupGeneration != lookup {

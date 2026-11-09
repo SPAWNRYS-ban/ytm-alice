@@ -91,7 +91,7 @@ func (s *Server) fillRadio(g uint64, id string) {
 		return
 	}
 	radio := task.tracks
-	if s.settingsLocked().MusicOnly {
+	if s.settingsLocked().musicOnlyActive() {
 		radio = onlyMusic(radio)
 	}
 	seen := map[string]bool{}

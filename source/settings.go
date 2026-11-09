@@ -44,6 +44,9 @@ func defaultSettings() Settings {
 	return Settings{WebAddr: defaultWebAddr, Radio: true, AnnounceText: "Включаю", AnnounceErrors: true, PlaybackLED: true, VoiceCommands: map[string]string{}}
 }
 
+// musicOnlyActive: music_only applies only together with youtube_only.
+func (v Settings) musicOnlyActive() bool { return v.YouTubeOnly && v.MusicOnly }
+
 func settingsPath() string { return filepath.Join(dataDir(), "settings.json") }
 
 func (s *Server) settingsLocked() Settings {
