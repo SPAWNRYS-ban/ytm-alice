@@ -770,6 +770,24 @@ func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
 	var trackRequests, takenOver []string
+	take := func(c net.Conn, id string, req request, reason string) {
+		takenOver = append(takenOver, id)
+		if len(takenOver) > 64 {
+			takenOver = takenOver[1:]
+		}
+		c.SetWriteDeadline(time.Now().Add(time.Second))
+		if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
+			log.Print("native dialog cancellation not confirmed")
+		}
+		log.Printf("voice takeover: %s %s", req.Action, reason)
+		go func() {
+			c, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+			if res := s.command(c, req); res.Error != "" {
+				log.Print("voice takeover failed")
+			}
+		}()
+	}
 	for ctx.Err() == nil {
 		c, e := net.DialTimeout("tcp", ipcAddress(), time.Second)
 		if e != nil {
@@ -801,28 +819,22 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
 				continue
 			}
+			fresh := ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID)
+			if !ok && fresh && len(ev.Response) > 0 && s.getSettings().YouTubeOnly {
+				// Alice found nothing for a music request and asks to clarify.
+				if query, isMusic := musicRequest(ev.Text); isMusic {
+					if music, listen := cloudAnswer(ev.Response); !music && listen {
+						take(c, ev.RequestID, request{Action: "play", Query: query, Spoken: query}, "after Alice found nothing")
+						continue
+					}
+				}
+			}
 			if !ok {
 				if s.getSettings().YouTubeOnly {
 					// The cloud chose its own music player: cancel it and play
 					// the same request on YouTube Music instead.
-					if m, found := parseNativeMusic(ev.Response); found && ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID) {
-						takenOver = append(takenOver, ev.RequestID)
-						if len(takenOver) > 64 {
-							takenOver = takenOver[1:]
-						}
-						c.SetWriteDeadline(time.Now().Add(time.Second))
-						if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
-							log.Print("native music cancellation not confirmed")
-						}
-						req := takeoverRequest(m, ev.Text)
-						log.Printf("voice takeover: %s from native %s", req.Action, m.Kind)
-						go func() {
-							c, cancel := context.WithTimeout(ctx, 45*time.Second)
-							defer cancel()
-							if res := s.command(c, req); res.Error != "" {
-								log.Print("voice takeover failed")
-							}
-						}()
+					if m, found := parseNativeMusic(ev.Response); found && fresh {
+						take(c, ev.RequestID, takeoverRequest(m, ev.Text), "from native "+m.Kind)
 					}
 					continue
 				}

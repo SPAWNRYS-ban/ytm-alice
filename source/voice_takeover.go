@@ -135,3 +135,58 @@ func takeoverLookupLog(r request, step string, tracks []Track, err error) string
 	}
 	return "voice takeover: " + asked + " -> " + strconv.Quote(tracks[0].Artists+" — "+tracks[0].Title) + " by " + step
 }
+
+// cloudAnswer reads a BUSY response: whether the cloud chose music
+// (audio_play) and whether Alice keeps listening for a clarification.
+func cloudAnswer(raw []byte) (music, listen bool) {
+	var reply struct {
+		Response struct {
+			Directives []struct {
+				Name string `json:"name"`
+			} `json:"directives"`
+		} `json:"response"`
+		VoiceResponse struct {
+			ShouldListen bool `json:"should_listen"`
+		} `json:"voice_response"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &reply) != nil {
+		return false, false
+	}
+	for _, d := range reply.Response.Directives {
+		if d.Name == "audio_play" {
+			music = true
+		}
+	}
+	return music, reply.VoiceResponse.ShouldListen
+}
+
+// Requests that start with a play verb but are not about music.
+var notMusic = []string{
+	"свет", "ламп", "люстр", "подсвет", "телевизор", "тв ", "таймер", "будильник",
+	"громк", "звук", "тише", "громче", "кондиционер", "пылесос", "розетк", "обогрев",
+	"увлажн", "чайник", "бойлер", "отоплен", "вентилятор", "блютуз", "bluetooth",
+	"режим", "радио", "сказк", "игр", "новост", "погод", "мультик", "фильм", "канал",
+}
+
+// musicRequest returns what to search for when the phrase asks to play
+// something («включи madonna everything» -> «madonna everything»).
+func musicRequest(text string) (string, bool) {
+	q := strings.TrimSpace(strings.TrimPrefix(normalize(text), "алиса "))
+	verb := false
+	for _, v := range []string{"включи ", "поставь ", "запусти ", "сыграй "} {
+		if strings.HasPrefix(q, v) {
+			verb = true
+			break
+		}
+	}
+	query := spokenMusicQuery(text)
+	if !verb || query == "" {
+		return "", false
+	}
+	for _, word := range notMusic {
+		if strings.HasPrefix(query+" ", word) {
+			return "", false
+		}
+	}
+	return query, true
+}

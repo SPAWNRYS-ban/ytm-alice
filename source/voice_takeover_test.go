@@ -120,3 +120,36 @@ func TestTakeoverLookupLogNamesRequestResultAndStep(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestCloudAnswerSeesNotFoundAndMusic(t *testing.T) {
+	// Recorded on a Mini 2: «Включи madonna everything», Alice answered
+	// «Не нашла ничего похожего» and kept listening.
+	notFound := []byte(`{"force_server_request":false,"header":{"request_id":"r1"},"response":{"cards":[],"directives":[{"name":"tts_play_placeholder","payload":{"channel":"Dialog"},"type":"client_action"}],"is_streaming":true},"voice_response":{"has_voice_response":true,"should_listen":true}}`)
+	if music, listen := cloudAnswer(notFound); music || !listen {
+		t.Fatalf("not found: music=%v listen=%v", music, listen)
+	}
+	playing := []byte(`{"response":{"directives":[{"name":"audio_play","sub_name":"music"}]},"voice_response":{"should_listen":false}}`)
+	if music, listen := cloudAnswer(playing); !music || listen {
+		t.Fatalf("music: music=%v listen=%v", music, listen)
+	}
+	if music, listen := cloudAnswer(nil); music || listen {
+		t.Fatal("empty response")
+	}
+}
+
+func TestMusicRequestSkipsHomeAndBareCommands(t *testing.T) {
+	for text, want := range map[string]string{
+		"Алиса, включи madonna everything": "madonna everything",
+		"поставь группу крови":             "группу крови",
+		"включи свет":                      "",
+		"включи таймер на 5 минут":         "",
+		"включи музыку":                    "",
+		"включи мою волну":                 "",
+		"сколько времени":                  "",
+	} {
+		got, ok := musicRequest(text)
+		if got != want || ok != (want != "") {
+			t.Errorf("%q: got %q %v, want %q", text, got, ok, want)
+		}
+	}
+}
