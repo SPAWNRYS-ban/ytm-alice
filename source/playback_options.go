@@ -160,7 +160,15 @@ func (s *Server) voiceAction(text string) (string, string, bool) {
 			return "play", strings.TrimSpace(q[len(prefix):]), true
 		}
 	}
-	return voiceAction(text)
+	a, query, ok := voiceAction(text)
+	// With youtube_only all music goes through Alice's answer, which also
+	// fixes misheard names («поставь mister brightside» found nothing by text,
+	// «включи» found «The Killers — Mr. Brightside» via the catalog). The text
+	// route keeps «ютуб» phrases, likes and player controls.
+	if ok && a == "play" && settings.YouTubeOnly && !mentionsYouTube(q) && query != "мои лайки" {
+		return "", "", false
+	}
+	return a, query, ok
 }
 
 // Only complete, known RGB rings are addressed; never clocks, microphone

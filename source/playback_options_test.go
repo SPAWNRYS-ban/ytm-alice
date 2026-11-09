@@ -48,3 +48,21 @@ func TestAlbumTracksTakeTheHeaderArtist(t *testing.T) {
 		t.Fatalf("%+v", tracks)
 	}
 }
+
+func TestYouTubeOnlyLeavesMusicToAlicesAnswer(t *testing.T) {
+	s := &Server{settings: &Settings{YouTubeOnly: true, VoiceCommands: map[string]string{"моя подборка": "play"}}}
+	for _, text := range []string{"поставь mister brightside", "включи песню fragile", "включи альбом brat"} {
+		if a, q, ok := s.voiceAction(text); ok {
+			t.Errorf("%q kept by the text route: %s %q", text, a, q)
+		}
+	}
+	for text, want := range map[string]string{"включи на ютубе numb": "play", "дальше": "next", "включи мои лайки": "play", "что играет": "what"} {
+		if a, _, ok := s.voiceAction(text); !ok || a != want {
+			t.Errorf("%q: %s %v, want %s", text, a, ok, want)
+		}
+	}
+	off := &Server{settings: &Settings{}}
+	if a, q, ok := off.voiceAction("поставь mister brightside"); !ok || a != "play" || q != "mister brightside" {
+		t.Fatalf("without youtube_only the upstream route stays: %s %q %v", a, q, ok)
+	}
+}
