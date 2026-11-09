@@ -25,6 +25,15 @@ func (c *Catalog) discardStream(src streamInfo) {
 	}
 }
 
+// forgetPlayer drops the cached YouTube player program. A player that decodes
+// without error but wrongly (e.g. after YouTube rotated it) yields URLs the
+// CDN rejects with 403; until the next restart every refresh reused it.
+func (c *Catalog) forgetPlayer() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.playerSource = ""
+}
+
 // Signed URLs and underlying error strings must never reach the log.
 func streamErrorClass(err error) string {
 	if errors.Is(err, context.Canceled) {
@@ -117,6 +126,7 @@ func (s *Server) relayAudioRange(w http.ResponseWriter, r *http.Request, p *nati
 	for offset := start; offset <= end; {
 		last := min(offset+(1<<20)-1, end)
 		failures := 0
+		forbidden := false
 		for offset <= last {
 			if r.Context().Err() != nil {
 				return
@@ -127,6 +137,9 @@ func (s *Server) relayAudioRange(w http.ResponseWriter, r *http.Request, p *nati
 				}
 				if failures == 1 && src.id != "" {
 					s.catalog.discardStream(src)
+					if forbidden {
+						s.catalog.forgetPlayer()
+					}
 					fresh, err := s.catalog.resolve(r.Context(), src.id)
 					if r.Context().Err() != nil {
 						return
@@ -165,6 +178,7 @@ func (s *Server) relayAudioRange(w http.ResponseWriter, r *http.Request, p *nati
 				status := resp.StatusCode
 				resp.Body.Close()
 				streamLog(src, offset, last, failures+1, "http-"+strconv.Itoa(status))
+				forbidden = forbidden || status == 403
 				retry = status == 403 || status == 408 || status == 410 || status == 429 || status >= 500
 				if !retry {
 					fail()
@@ -208,6 +222,9 @@ func (s *Server) relayAudioRange(w http.ResponseWriter, r *http.Request, p *nati
 				failures++
 				if failures >= streamAttempts {
 					s.catalog.discardStream(src)
+					if forbidden {
+						s.catalog.forgetPlayer()
+					}
 					fail()
 					return
 				}

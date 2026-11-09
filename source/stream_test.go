@@ -164,3 +164,29 @@ func TestStreamRejectsWrongRangeBeforeSendingAudio(t *testing.T) {
 		t.Fatal("wrong stream position reached the decoder")
 	}
 }
+
+func TestStreamForbiddenDropsCachedPlayerProgram(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reply  func() (*http.Response, error)
+		forget bool
+	}{
+		{"403", func() (*http.Response, error) {
+			return &http.Response{StatusCode: 403, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}, true},
+		{"timeout", func() (*http.Response, error) {
+			return nil, errors.New("net/http: timeout awaiting response headers")
+		}, false},
+	} {
+		s, _ := streamFixture([]byte("audio"))
+		s.catalog.playerSource = "player program"
+		s.catalog.http = &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return tc.reply() })}
+		previous := log.Writer()
+		log.SetOutput(io.Discard)
+		s.relay(httptest.NewRecorder(), httptest.NewRequest("GET", "http://127.0.0.1/audio/test", nil))
+		log.SetOutput(previous)
+		if forgot := s.catalog.playerSource == ""; forgot != tc.forget {
+			t.Fatalf("%s: player program dropped=%v, want %v", tc.name, forgot, tc.forget)
+		}
+	}
+}
