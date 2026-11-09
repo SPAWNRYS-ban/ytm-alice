@@ -115,6 +115,10 @@ func takeoverRequest(m nativeMusic, text string) request {
 	// words first; the catalog song stays the fallback (it also fixes
 	// misheard names such as «мистер брайтсайд» -> «Mr. Brightside»).
 	r.SpokenFirst = r.Single && r.Spoken != "" && !coveredBy(r.Spoken, m.Artist+" "+m.Title)
+	// The same for an artist: «charli xcx» came back as Icona Pop.
+	if action == "play" && m.Kind == "Artist" && r.Spoken != "" && !coveredBy(r.Spoken, m.Artist) {
+		r.SpokenFirst = true
+	}
 	return r
 }
 

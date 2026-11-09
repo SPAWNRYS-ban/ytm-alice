@@ -247,3 +247,13 @@ func TestGenresAndChartsBecomePlaylists(t *testing.T) {
 		t.Fatalf("said «плейлист»: %+v", r)
 	}
 }
+
+func TestSpokenFirstWhenCatalogPickedAnotherArtist(t *testing.T) {
+	// Recorded on a Mini 2: «включи charli xcx» came back as Icona Pop.
+	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Icona Pop"}, "включи charli xcx"); !r.SpokenFirst || r.Query != "Icona Pop" || r.Spoken != "charli xcx" || r.Single {
+		t.Fatalf("%+v", r)
+	}
+	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Кино"}, "включи кино"); r.SpokenFirst {
+		t.Fatalf("matching artist: %+v", r)
+	}
+}
