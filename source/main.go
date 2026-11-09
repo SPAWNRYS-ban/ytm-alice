@@ -733,13 +733,17 @@ func (s *Server) voiceLoop(ctx context.Context) {
 	lastTime := time.Time{}
 	var trackRequests []string
 	for ctx.Err() == nil {
-		c, e := net.DialTimeout("tcp", ipcAddress(), time.Second)
+		c, e := net.DialTimeout("tcp", voiceIPCAddress(), time.Second)
 		if e != nil {
 			time.Sleep(time.Second)
 			continue
 		}
+		// One long-lived subscription: an idle gap is not a disconnect.
+		// Reconnecting after every quiet 2 s (~1800 times an hour) made Alice
+		// replies slower the longer platformd ran. Shutdown closes the socket
+		// to unblock the read.
+		stop := context.AfterFunc(ctx, func() { c.Close() })
 		for ctx.Err() == nil {
-			c.SetReadDeadline(time.Now().Add(2 * time.Second))
 			raw, e := frameRead(c)
 			if e != nil {
 				break
@@ -816,8 +820,12 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				}
 			}(ev.Text)
 		}
+		stop()
 		c.Close()
 		s.aliceIdle.Store(false)
+		if ctx.Err() == nil {
+			time.Sleep(time.Second)
+		}
 	}
 }
 func stationCertPool(paths ...string) *x509.CertPool {
