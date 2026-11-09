@@ -793,7 +793,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			c, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
 			if res := s.command(c, req); res.Error != "" {
-				log.Print("voice takeover failed")
+				log.Print("voice takeover failed: " + logSafe(res.Error))
 			}
 		}()
 	}
@@ -895,7 +895,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				defer cancel()
 				res := s.command(c, request{Action: "voice", Query: text})
 				if res.Error != "" {
-					log.Print("voice music request failed")
+					log.Print("voice music request failed: " + logSafe(res.Error))
 				}
 			}(ev.Text)
 		}

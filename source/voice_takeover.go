@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -224,4 +225,16 @@ func musicRequest(text string) (string, bool) {
 		}
 	}
 	return query, true
+}
+
+var urlInText = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://\S+`)
+
+// logSafe keeps a command error readable in the log without the request
+// URLs that Go network errors embed (they can carry signatures and keys).
+func logSafe(message string) string {
+	message = urlInText.ReplaceAllString(message, "<url>")
+	if len([]rune(message)) > 200 {
+		message = string([]rune(message)[:200]) + "…"
+	}
+	return message
 }

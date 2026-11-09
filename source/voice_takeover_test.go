@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Trimmed AliceResponse JSON in the shape captured on a Mini 2 (quasar 3.21).
 const (
@@ -189,5 +192,15 @@ func TestSpokenQueryDropsFillerWordsInside(t *testing.T) {
 		if got := spokenMusicQuery(text); got != want {
 			t.Errorf("%q: got %q, want %q", text, got, want)
 		}
+	}
+}
+
+func TestLogSafeDropsURLs(t *testing.T) {
+	got := logSafe(`Post "https://music.youtube.com/youtubei/v1/search?key=SECRET&sig=abc": context deadline exceeded`)
+	if strings.Contains(got, "SECRET") || strings.Contains(got, "youtube.com") || !strings.Contains(got, "context deadline exceeded") {
+		t.Fatalf("unsafe or unreadable: %s", got)
+	}
+	if got := logSafe("альбом или плейлист не найден"); got != "альбом или плейлист не найден" {
+		t.Fatal(got)
 	}
 }
