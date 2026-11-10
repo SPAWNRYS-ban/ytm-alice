@@ -235,6 +235,9 @@ func (s *Server) command(ctx context.Context, r request) response {
 		var e error
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
+			// A personal mix lists songs twice like radio does (audio and
+			// clip under different IDs).
+			tracks = newRadioTracks(nil, tracks)
 		} else {
 			step := "spoken first"
 			e = errNoTracks

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRadioSkipsVideoVersionsOfTheSameSong(t *testing.T) {
 	queue := []Track{{ID: "m2zUrruKjDQ", Artists: "The Killers", Title: "Mr. Brightside"}}
@@ -64,5 +67,23 @@ func TestYouTubeOnlyLeavesMusicToAlicesAnswer(t *testing.T) {
 	off := &Server{settings: &Settings{}}
 	if a, q, ok := off.voiceAction("поставь mister brightside"); !ok || a != "play" || q != "mister brightside" {
 		t.Fatalf("without youtube_only the upstream route stays: %s %q %v", a, q, ok)
+	}
+}
+
+func TestRecommendationsSkipVideoVersionsOfTheSameSong(t *testing.T) {
+	mix := []Track{
+		{ID: "a1", Artists: "Artist A и Artist B", Title: "Song One"},
+		{ID: "a2", Artists: "Artist A и Artist B", Title: "Song One"},
+		{ID: "b1", Artists: "Artist C", Title: "Song Two"},
+		{ID: "b2", Artists: "Artist C и Artist D", Title: "Song Two"},
+		{ID: "c1", Artists: "Artist E и Artist F", Title: "Song Three (remix)"},
+		{ID: "c2", Artists: "Artist E", Title: "Song Three"},
+	}
+	got := []string{}
+	for _, track := range newRadioTracks(nil, mix) {
+		got = append(got, track.ID)
+	}
+	if strings.Join(got, " ") != "a1 b1 c1 c2" {
+		t.Fatalf("got %v", got)
 	}
 }
