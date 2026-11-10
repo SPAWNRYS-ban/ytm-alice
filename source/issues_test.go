@@ -166,6 +166,7 @@ func TestPlaylistDoesNotFollowEndlessSuggestions(t *testing.T) {
 func TestExplicitTrackUsesMusicSessionOnly(t *testing.T) {
 	c := newCatalog()
 	c.auth = &Credentials{Cookie: "SAPISID=fixture-only", AuthUser: "0"}
+	c.playerSTS = 20761
 	musicCalls, publicCalls := 0, 0
 	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "music.youtube.com" {
@@ -183,6 +184,9 @@ func TestExplicitTrackUsesMusicSessionOnly(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&body)
 		if body["racyCheckOk"] != true || body["contentCheckOk"] != true {
 			t.Fatal("missing content acknowledgement")
+		}
+		if sts := get(body, "playbackContext", "contentPlaybackContext", "signatureTimestamp"); sts != float64(20761) {
+			t.Fatalf("signature timestamp of the decoding player not sent: %v", sts)
 		}
 		return jsonReply(map[string]any{"playabilityStatus": map[string]any{"status": "OK"}, "streamingData": map[string]any{"adaptiveFormats": []any{map[string]any{"itag": 140, "url": "https://test.googlevideo.com/audio", "mimeType": "audio/mp4", "audioChannels": 2, "contentLength": "1024"}}}}), nil
 	})}
@@ -340,5 +344,17 @@ func TestWebReportsBoundPortUntilRestart(t *testing.T) {
 	out := s.settingsCommand(request{Action: "config-set", Settings: &SettingsPatch{WebAddr: &next}})
 	if out.Error != "" || out.WebAddr != before || out.Settings.WebAddr != next {
 		t.Fatal("pending port advertised as running", out)
+	}
+}
+
+func TestPlayerTimestamp(t *testing.T) {
+	for player, want := range map[string]int{
+		`var a={signatureTimestamp:20761,b:1}`: 20761,
+		`c={sts:20760,d:2}`:                    20760,
+		`no timestamp here`:                    0,
+	} {
+		if got := playerTimestamp(player); got != want {
+			t.Errorf("%q: got %d, want %d", player, got, want)
+		}
 	}
 }

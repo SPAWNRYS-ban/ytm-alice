@@ -109,6 +109,9 @@ type Catalog struct {
 	ytMu      sync.Mutex
 	ytClient  *yt.Client
 	ytCreated time.Time
+	// Signature timestamp of the current player program; see music_player.go.
+	stsMu     sync.Mutex
+	playerSTS int
 }
 type catalogEntry struct {
 	tracks []Track

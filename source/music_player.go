@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -15,7 +16,14 @@ import (
 // session. Keep that session on the existing, exact music.youtube.com endpoint;
 // the public resolver, JS downloads and signed CDN URLs remain credential-free.
 func (c *Catalog) musicVideo(ctx context.Context, id string) (*yt.Video, error) {
-	data, err := c.request(ctx, "player", map[string]any{"videoId": id, "contentCheckOk": true, "racyCheckOk": true, "playbackContext": map[string]any{"contentPlaybackContext": map[string]any{"html5Preference": "HTML5_PREF_WANTS"}}})
+	playback := map[string]any{"html5Preference": "HTML5_PREF_WANTS"}
+	// The signature must match the player program that decodes it: without
+	// the timestamp YouTube may sign for another player version, and the CDN
+	// answers 403 to every URL decoded with ours.
+	if sts := c.signatureTimestamp(ctx, id); sts > 0 {
+		playback["signatureTimestamp"] = sts
+	}
+	data, err := c.request(ctx, "player", map[string]any{"videoId": id, "contentCheckOk": true, "racyCheckOk": true, "playbackContext": map[string]any{"contentPlaybackContext": playback}})
 	if err != nil {
 		return nil, err
 	}
@@ -61,4 +69,40 @@ func resolverError(err error) error {
 		return fmt.Errorf("YouTube: трек недоступен (%s)", status.Status)
 	}
 	return errors.New("YouTube: не удалось получить аудиопоток")
+}
+
+var playerTimestampPattern = regexp.MustCompile(`(?:signatureTimestamp|sts)\s*:\s*(\d{5})`)
+
+// playerTimestamp reads the signature timestamp of a player program; 0 when
+// it is missing.
+func playerTimestamp(player string) int {
+	m := playerTimestampPattern.FindStringSubmatch(player)
+	if m == nil {
+		return 0
+	}
+	sts, _ := strconv.Atoi(m[1])
+	return sts
+}
+
+func (c *Catalog) setSignatureTimestamp(sts int) {
+	c.stsMu.Lock()
+	c.playerSTS = sts
+	c.stsMu.Unlock()
+}
+
+// signatureTimestamp returns the timestamp of the current player program,
+// loading the program once when no decoding has needed it yet. A failed load
+// returns 0 and the request goes without it, as before.
+func (c *Catalog) signatureTimestamp(ctx context.Context, id string) int {
+	c.stsMu.Lock()
+	defer c.stsMu.Unlock()
+	if c.playerSTS > 0 {
+		return c.playerSTS
+	}
+	player, err := c.playerProgram(ctx, id)
+	if err != nil {
+		return 0
+	}
+	c.playerSTS = playerTimestamp(player)
+	return c.playerSTS
 }

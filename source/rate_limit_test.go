@@ -23,6 +23,7 @@ func requireRateLimit(t *testing.T, err error) {
 func TestMusic429StopsFallbackAndAllUncachedPlaybackRequests(t *testing.T) {
 	c := newCatalog()
 	c.auth = &Credentials{Cookie: "SAPISID=fixture-only", AuthUser: "0"}
+	c.playerSTS = 20761
 	calls := 0
 	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
