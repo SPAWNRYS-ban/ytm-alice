@@ -97,16 +97,16 @@ func TestTitleLookupFindsSongCreditedToAnotherArtist(t *testing.T) {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		queries = append(queries, str(body["query"]))
-		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Bochka, Bass, Kolbaser"}}}}}, map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "XS Project", "navigationEndpoint": map[string]any{"browseEndpoint": map[string]any{"browseId": "UCxsproject"}}}}}}}}}}), nil
+		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Alpha, Beta, Gamma"}}}}}, map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Group B", "navigationEndpoint": map[string]any{"browseEndpoint": map[string]any{"browseId": "UCgroupb"}}}}}}}}}}), nil
 	})}
-	if _, err := c.playLookup(context.Background(), "Паша Техник Bochka, Bass, Kolbaser"); !errors.Is(err, errNoTracks) {
+	if _, err := c.playLookup(context.Background(), "Исполнитель Alpha, Beta, Gamma"); !errors.Is(err, errNoTracks) {
 		t.Fatalf("artist mismatch should not match by artist and title: %v", err)
 	}
-	got, err := c.titleLookup(context.Background(), "Паша Техник", "Bochka, Bass, Kolbaser")
+	got, err := c.titleLookup(context.Background(), "Исполнитель", "Alpha, Beta, Gamma")
 	if err != nil || len(got) != 1 || got[0].ID != "abcdefghijk" {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if queries[len(queries)-1] != "Bochka, Bass, Kolbaser" {
+	if queries[len(queries)-1] != "Alpha, Beta, Gamma" {
 		t.Fatalf("title lookup searched %q", queries[len(queries)-1])
 	}
 }

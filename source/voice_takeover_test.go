@@ -9,10 +9,10 @@ import (
 const (
 	nativeWave = `{"header":{"request_id":"r1"},"response":{"cards":[{"text":"Включаю."}],"directives":[
 		{"name":"tts_play_placeholder","sub_name":"tts_play_placeholder","type":"client_action","payload":{"channel":"dialog"}},
-		{"name":"audio_play","sub_name":"music","type":"client_action","payload":{"metadata":{"title":"Bangaranga","subtitle":"DARA",
+		{"name":"audio_play","sub_name":"music","type":"client_action","payload":{"metadata":{"title":"Song One","subtitle":"Artist A",
 			"glagol_metadata":{"music_metadata":{"id":"user:onyourwave","type":"Radio"}}},"stream":{"id":"152653243"}}}]}}`
-	nativeArtist = `{"response":{"directives":[{"name":"audio_play","sub_name":"music","type":"client_action","payload":{"metadata":{"title":"Numb","subtitle":"Linkin Park",
-		"glagol_metadata":{"music_metadata":{"id":"36800","type":"Artist"}}}}}]}}`
+	nativeArtist = `{"response":{"directives":[{"name":"audio_play","sub_name":"music","type":"client_action","payload":{"metadata":{"title":"Song Two","subtitle":"Artist B",
+		"glagol_metadata":{"music_metadata":{"id":"100","type":"Artist"}}}}}]}}`
 	nativeLight = `{"response":{"cards":[{"text":"Где мне это сделать?"}],"directives":[{"name":"tts_play_placeholder","sub_name":"tts_play_placeholder","type":"client_action","payload":{}}]}}`
 )
 
@@ -37,8 +37,8 @@ func TestNativeMusicIsReplayedOnYouTube(t *testing.T) {
 	for _, tc := range []struct{ response, text, action, query string }{
 		{nativeWave, "Включи музыку", "recommendations", ""},
 		{nativeWave, "Включи мою волну", "recommendations", ""},
-		{nativeArtist, "Включи linkin park", "play", "Linkin Park"},
-		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"title":"Numb","subtitle":"Linkin Park","glagol_metadata":{"music_metadata":{"type":"Track"}}}}}]}}`, "включи намб", "play", "Linkin Park Numb"},
+		{nativeArtist, "Включи artist b", "play", "Artist B"},
+		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"title":"Song Two","subtitle":"Artist B","glagol_metadata":{"music_metadata":{"type":"Track"}}}}}]}}`, "включи сонг ту", "play", "Artist B Song Two"},
 		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"glagol_metadata":{"music_metadata":{"id":"genre:rock","type":"Radio"}}}}}]}}`, "Алиса, поставь рок", "play", "плейлист рок"},
 		{`{"response":{"directives":[{"name":"audio_play","sub_name":"music","payload":{"metadata":{"glagol_metadata":{"music_metadata":{"type":"Generative"}}}}}]}}`, "включи что-нибудь", "recommendations", ""},
 	} {
@@ -68,7 +68,7 @@ func TestYouTubeOnlySetting(t *testing.T) {
 }
 
 func TestSingleTrackKeepsBestMatchOnly(t *testing.T) {
-	versions := []Track{{ID: "audio", Title: "Get Lucky"}, {ID: "clip", Title: "Get Lucky (Official Video)"}, {ID: "lyrics", Title: "Get Lucky (Lyrics)"}}
+	versions := []Track{{ID: "audio", Title: "Song One"}, {ID: "clip", Title: "Song One (Official Video)"}, {ID: "lyrics", Title: "Song One (Lyrics)"}}
 	if got := singleTrack(versions, true); len(got) != 1 || got[0].ID != "audio" {
 		t.Fatalf("single request queue = %+v, want only the best match", got)
 	}
@@ -78,12 +78,12 @@ func TestSingleTrackKeepsBestMatchOnly(t *testing.T) {
 }
 
 func TestTakeoverRequestCarriesTitleAndSpokenFallbacks(t *testing.T) {
-	r := takeoverRequest(nativeMusic{Kind: "Track", Title: "Bochka, Bass, Kolbaser", Artist: "Паша Техник"}, "алиса включи колбасер")
-	if r.Action != "play" || r.Query != "Паша Техник Bochka, Bass, Kolbaser" || !r.Single || r.Title != "Bochka, Bass, Kolbaser" || r.Artist != "Паша Техник" || r.Spoken != "колбасер" {
+	r := takeoverRequest(nativeMusic{Kind: "Track", Title: "Alpha, Beta, Gamma", Artist: "Исполнитель"}, "алиса включи гамма")
+	if r.Action != "play" || r.Query != "Исполнитель Alpha, Beta, Gamma" || !r.Single || r.Title != "Alpha, Beta, Gamma" || r.Artist != "Исполнитель" || r.Spoken != "гамма" {
 		t.Fatalf("track request = %+v", r)
 	}
-	r = takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Кино"}, "алиса включи кино")
-	if r.Single || r.Title != "" || r.Query != "Кино" {
+	r = takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Группа А"}, "алиса включи группа а")
+	if r.Single || r.Title != "" || r.Query != "Группа А" {
 		t.Fatalf("artist request = %+v", r)
 	}
 	if r = takeoverRequest(nativeMusic{Kind: "Radio", ID: "user:onyourwave"}, "алиса включи мою волну"); r.Action != "recommendations" || r.Spoken != "" {
@@ -92,41 +92,40 @@ func TestTakeoverRequestCarriesTitleAndSpokenFallbacks(t *testing.T) {
 }
 
 func TestSameTitleTrustsOnlyDistinctiveTitlesFromOtherArtists(t *testing.T) {
-	// Live YouTube Music results for «Bochka, Bass, Kolbaser»; Yandex credits
-	// the song to Паша Техник.
-	kolbaser := []Track{
-		{ID: "Lirc7fymdCA", Artists: "XS Project", Title: "Bochka, Bass, Kolbaser"},
-		{ID: "MaUQNCyscFQ", Artists: "XS Project", Title: "Bochka Bass Kolbaser (Slowed)"},
-		{ID: "qT1W9uXfep4", Artists: "3LEG", Title: "All Night Bochka"},
-		{ID: "-6_u0SnjyrE", Artists: "HoNoTo", Title: "Bochka Bass Kolbaser"},
+	// One catalog credits the song to «Исполнитель», the other to «Group B».
+	distinctive := []Track{
+		{ID: "track-1", Artists: "Group B", Title: "Alpha, Beta, Gamma"},
+		{ID: "track-2", Artists: "Group B", Title: "Alpha Beta Gamma (Slowed)"},
+		{ID: "track-3", Artists: "Group C", Title: "All Night Alpha"},
+		{ID: "track-4", Artists: "Group D", Title: "Alpha Beta Gamma"},
 	}
-	if got := sameTitle("Паша Техник", "Bochka, Bass, Kolbaser", kolbaser); len(got) != 2 || got[0].ID != "Lirc7fymdCA" {
+	if got := sameTitle("Исполнитель", "Alpha, Beta, Gamma", distinctive); len(got) != 2 || got[0].ID != "track-1" {
 		t.Fatalf("distinctive title: %+v", got)
 	}
-	lesnik := []Track{{ID: "abcdefghijk", Artists: "Другая группа", Title: "Лесник"}, {ID: "bcdefghijkl", Artists: "Король и Шут", Title: "Лесник"}}
-	if got := sameTitle("Король и Шут", "Лесник", lesnik); len(got) != 1 || got[0].ID != "bcdefghijkl" {
+	short := []Track{{ID: "abcdefghijk", Artists: "Другой исполнитель", Title: "Звезда"}, {ID: "bcdefghijkl", Artists: "Группа А", Title: "Звезда"}}
+	if got := sameTitle("Группа А", "Звезда", short); len(got) != 1 || got[0].ID != "bcdefghijkl" {
 		t.Fatalf("same artist must win: %+v", got)
 	}
-	if got := sameTitle("Король и Шут", "Лесник", lesnik[:1]); len(got) != 0 {
+	if got := sameTitle("Группа А", "Звезда", short[:1]); len(got) != 0 {
 		t.Fatalf("a one-word title of another artist was accepted: %+v", got)
 	}
 }
 
 func TestTakeoverLookupLogNamesRequestResultAndStep(t *testing.T) {
-	r := request{Query: "Паша Техник Bochka, Bass, Kolbaser", Title: "Bochka, Bass, Kolbaser", Artist: "Паша Техник", Spoken: "колбасер"}
-	got := takeoverLookupLog(r, "title", []Track{{Artists: "XS Project", Title: "Bochka, Bass, Kolbaser"}}, nil)
-	want := `voice takeover: "Паша Техник — Bochka, Bass, Kolbaser" (said "колбасер") -> "XS Project — Bochka, Bass, Kolbaser" by title`
+	r := request{Query: "Исполнитель Alpha, Beta, Gamma", Title: "Alpha, Beta, Gamma", Artist: "Исполнитель", Spoken: "гамма"}
+	got := takeoverLookupLog(r, "title", []Track{{Artists: "Group B", Title: "Alpha, Beta, Gamma"}}, nil)
+	want := `voice takeover: "Исполнитель — Alpha, Beta, Gamma" (said "гамма") -> "Group B — Alpha, Beta, Gamma" by title`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
-	if got := takeoverLookupLog(request{Query: "кино", Spoken: "кино"}, "query", nil, errNoTracks); got != `voice takeover: "кино" (said "кино") not found` {
+	if got := takeoverLookupLog(request{Query: "звезда", Spoken: "звезда"}, "query", nil, errNoTracks); got != `voice takeover: "звезда" (said "звезда") not found` {
 		t.Fatal(got)
 	}
 }
 
 func TestCloudAnswerSeesNotFoundAndMusic(t *testing.T) {
-	// Recorded on a Mini 2: «Включи madonna everything», Alice answered
-	// «Не нашла ничего похожего» and kept listening.
+	// Shape recorded on a Mini 2: Alice answered «Не нашла ничего похожего»
+	// to a song request and kept listening.
 	notFound := []byte(`{"force_server_request":false,"header":{"request_id":"r1"},"response":{"cards":[],"directives":[{"name":"tts_play_placeholder","payload":{"channel":"Dialog"},"type":"client_action"}],"is_streaming":true},"voice_response":{"has_voice_response":true,"should_listen":true}}`)
 	if music, listen := cloudAnswer(notFound); music || !listen {
 		t.Fatalf("not found: music=%v listen=%v", music, listen)
@@ -142,13 +141,13 @@ func TestCloudAnswerSeesNotFoundAndMusic(t *testing.T) {
 
 func TestMusicRequestSkipsHomeAndBareCommands(t *testing.T) {
 	for text, want := range map[string]string{
-		"Алиса, включи madonna everything": "madonna everything",
-		"поставь группу крови":             "группу крови",
-		"включи свет":                      "",
-		"включи таймер на 5 минут":         "",
-		"включи музыку":                    "",
-		"включи мою волну":                 "",
-		"сколько времени":                  "",
+		"Алиса, включи artist a song one": "artist a song one",
+		"поставь группу а":                "группу а",
+		"включи свет":                     "",
+		"включи таймер на 5 минут":        "",
+		"включи музыку":                   "",
+		"включи мою волну":                "",
+		"сколько времени":                 "",
 	} {
 		got, ok := musicRequest(text)
 		if got != want || ok != (want != "") {
@@ -162,13 +161,14 @@ func TestSpokenFirstWhenCatalogPickedAnotherSong(t *testing.T) {
 		artist, title, said string
 		first               bool
 	}{
-		// Recorded on a Mini 2: the catalog picked a different song.
-		{"Umideep", "Madonna", "включи madonna fragile", true},
-		{"Madonna", "Rain", "включи madonna трек everything", true},
-		// The catalog song matches, or corrects misheard words.
-		{"Паша Техник", "Bochka, Bass, Kolbaser", "включи колбасер", false},
-		{"Кино", "Группа крови", "включи группа крови", false},
-		{"Madonna", "Everything", "включи мадонна everything", false},
+		// The catalog picked a different song: one named after the artist,
+		// or another song of the artist.
+		{"Other Band", "Singer", "включи singer song two", true},
+		{"Singer", "Rain", "включи singer трек song one", true},
+		// The catalog song matches, also when said in Cyrillic.
+		{"Исполнитель", "Alpha, Beta, Gamma", "включи гамма", false},
+		{"Группа А", "Утро", "включи утро", false},
+		{"Singer", "Song One", "включи сингер song one", false},
 	} {
 		r := takeoverRequest(nativeMusic{Kind: "Track", Artist: tc.artist, Title: tc.title}, tc.said)
 		if r.SpokenFirst != tc.first {
@@ -177,17 +177,17 @@ func TestSpokenFirstWhenCatalogPickedAnotherSong(t *testing.T) {
 	}
 	// A misheard foreign title does not match the catalog, so the spoken words
 	// are tried first and the catalog song remains the fallback.
-	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "The Killers", Title: "Mr. Brightside"}, "включи мистер брайтсайд"); !r.SpokenFirst || r.Query != "The Killers Mr. Brightside" {
+	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Band X", Title: "Song Title"}, "включи сонг тайтл"); !r.SpokenFirst || r.Query != "Band X Song Title" {
 		t.Fatalf("misheard title: %+v", r)
 	}
 }
 
 func TestSpokenQueryDropsFillerWordsInside(t *testing.T) {
 	for text, want := range map[string]string{
-		"включи madonna трек everything":         "madonna everything",
-		"Алиса, включи madonna песня everything": "madonna everything",
-		"включи трек numb":                       "numb",
-		"включи песню":                           "",
+		"включи artist a трек song one":         "artist a song one",
+		"Алиса, включи artist a песня song one": "artist a song one",
+		"включи трек song two":                  "song two",
+		"включи песню":                          "",
 	} {
 		if got := spokenMusicQuery(text); got != want {
 			t.Errorf("%q: got %q, want %q", text, got, want)
@@ -206,28 +206,28 @@ func TestLogSafeDropsURLs(t *testing.T) {
 }
 
 func TestAlbumTakeoverSearchesAnAlbum(t *testing.T) {
-	// Recorded on a Mini 2: the cloud chose an Album; searched as a song the
-	// phrase found only the title track «She’s the Best».
+	// The cloud chose an Album; searched as a song the phrase found only the
+	// title track.
 	for text, want := range map[string]string{
-		"включи troye sivan альбом she s the best": "альбом troye sivan she s the best",
-		"Включи альбом brat charli xcx":            "альбом brat charli xcx",
-		"включи brat": "альбом brat",
+		"включи artist a альбом album one": "альбом artist a album one",
+		"Включи альбом album two artist b": "альбом album two artist b",
+		"включи album two":                 "альбом album two",
 	} {
-		if a, q := takeoverAction(nativeMusic{Kind: "Album", Title: "She’s the Best", Artist: "Troye Sivan"}, text); a != "play" || q != want {
+		if a, q := takeoverAction(nativeMusic{Kind: "Album", Title: "Album One", Artist: "Artist A"}, text); a != "play" || q != want {
 			t.Errorf("%q: got %s %q, want %q", text, a, q, want)
 		}
 	}
-	if r := takeoverRequest(nativeMusic{Kind: "Album"}, "включи troye sivan альбом she s the best"); r.Single || r.SpokenFirst {
+	if r := takeoverRequest(nativeMusic{Kind: "Album"}, "включи artist a альбом album one"); r.Single || r.SpokenFirst {
 		t.Fatalf("an album is not one song: %+v", r)
 	}
 }
 
 func TestSaidAlbumWinsOverCatalogTrack(t *testing.T) {
-	r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Troye Sivan", Title: "She’s the Best"}, "Включи troye sivan альбом she s the best")
-	if r.Query != "альбом troye sivan she s the best" || r.Single || r.SpokenFirst || r.Title != "" {
+	r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Artist A", Title: "Album One"}, "Включи artist a альбом album one")
+	if r.Query != "альбом artist a album one" || r.Single || r.SpokenFirst || r.Title != "" {
 		t.Fatalf("%+v", r)
 	}
-	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Кино", Title: "Группа крови"}, "включи группа крови"); r.Query != "Кино Группа крови" || !r.Single {
+	if r := takeoverRequest(nativeMusic{Kind: "Track", Artist: "Группа А", Title: "Утро"}, "включи утро"); r.Query != "Группа А Утро" || !r.Single {
 		t.Fatalf("no «альбом», catalog track: %+v", r)
 	}
 }
@@ -249,11 +249,11 @@ func TestGenresAndChartsBecomePlaylists(t *testing.T) {
 }
 
 func TestSpokenFirstWhenCatalogPickedAnotherArtist(t *testing.T) {
-	// Recorded on a Mini 2: «включи charli xcx» came back as Icona Pop.
-	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Icona Pop"}, "включи charli xcx"); !r.SpokenFirst || r.Query != "Icona Pop" || r.Spoken != "charli xcx" || r.Single {
+	// The catalog answered with another artist than the one said.
+	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Artist B"}, "включи artist a"); !r.SpokenFirst || r.Query != "Artist B" || r.Spoken != "artist a" || r.Single {
 		t.Fatalf("%+v", r)
 	}
-	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Кино"}, "включи кино"); r.SpokenFirst {
+	if r := takeoverRequest(nativeMusic{Kind: "Artist", Artist: "Группа А"}, "включи группа а"); r.SpokenFirst {
 		t.Fatalf("matching artist: %+v", r)
 	}
 }

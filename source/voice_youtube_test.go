@@ -4,11 +4,11 @@ import "testing"
 
 func TestYouTubeAnywhereInPhrase(t *testing.T) {
 	for _, tc := range []struct{ phrase, action, query string }{
-		{"Алиса, включи трек панцушот с ютуба", "play", "панцушот"},
-		{"включи трек он сошел с ума с ютуба", "play", "он сошел с ума"},
-		{"включи numb из ютуба", "play", "numb"},
-		{"найди на ютубе daft punk", "play", "daft punk"},
-		{"поставь альбом meteora с ютуба", "play", "альбом meteora"},
+		{"Алиса, включи трек звезда с ютуба", "play", "звезда"},
+		{"включи трек ушёл с утра с ютуба", "play", "ушёл с утра"},
+		{"включи song one из ютуба", "play", "song one"},
+		{"найди на ютубе artist a", "play", "artist a"},
+		{"поставь альбом album one с ютуба", "play", "альбом album one"},
 		{"включи трек с ютуба", "recommendations", ""},
 		{"включи музыку с ютуба", "recommendations", ""},
 		{"включи ютуб", "recommendations", ""},
