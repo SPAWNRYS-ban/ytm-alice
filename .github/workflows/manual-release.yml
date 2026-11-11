@@ -93,7 +93,18 @@ jobs:
           cd ../release
           sha256sum -c SHA256SUMS
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'Release already exists; leaving its assets intact.'
+            python3 - <<'PYCODE'
+          import hashlib, json, os, subprocess
+          release = json.loads(subprocess.check_output(['gh', 'api', f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{os.environ['RELEASE_TAG']}"]))
+          assert not release['draft'] and not release['prerelease'], 'Existing release is not published and stable'
+          from pathlib import Path
+          expected = {line.split()[1]: line.split()[0] for line in Path('SHA256SUMS').read_text().splitlines()}
+          expected['SHA256SUMS'] = hashlib.sha256(Path('SHA256SUMS').read_bytes()).hexdigest()
+          actual = {asset['name']: asset for asset in release['assets']}
+          assert actual.keys() == expected.keys(), 'Existing release has incomplete or different assets'
+          assert all(actual[name]['state'] == 'uploaded' and actual[name]['digest'] == 'sha256:' + digest for name, digest in expected.items()), 'Existing release assets differ'
+          print('Existing release matches verified checksums; assets preserved.')
+          PYCODE
             exit 0
           fi
           gh release create "$RELEASE_TAG" ./* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "ytm-alice ${RELEASE_TAG#v}" --notes-file ../docs/RELEASE.md
