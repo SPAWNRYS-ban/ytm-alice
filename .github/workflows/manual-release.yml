@@ -1,0 +1,100 @@
+name: Manual Linux release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        type: string
+      verified_run:
+        description: CI run with successful Linux, media and Station package jobs for that tag commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+    defaults:
+      run:
+        working-directory: source
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      VERIFIED_RUN: ${{ inputs.verified_run }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate tag and successful Linux checks
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          tag, run = os.environ['RELEASE_TAG'], os.environ['VERIFIED_RUN']
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag), 'Expected a version tag'
+          assert run.isdigit(), 'Expected a CI run ID'
+          repo = os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/{path}']))
+          revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          info = api(f'actions/runs/{run}')
+          assert info['head_sha'] == revision, 'CI must validate the exact release commit'
+          assert info['path'] == '.github/workflows/ci.yml', 'Expected the standard CI workflow'
+          jobs = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/actions/runs/{run}/jobs']))
+          jobs = [job for page in jobs for job in page['jobs']]
+          for name in ['Tests (ubuntu-24.04)', 'Media tests and secret scan', 'Station package']:
+              matches = [job for job in jobs if job['name'] == name]
+              assert len(matches) == 1 and matches[0]['conclusion'] == 'success', f'{name} must pass'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], check=True)
+          subprocess.run(['python3', 'scripts/check-version.py'], env={**os.environ, 'GITHUB_REF_TYPE': 'tag', 'GITHUB_REF_NAME': tag}, check=True)
+          PYCODE
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.sum
+      - name: Build Go service
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/ytm-alice .
+      - name: Build native player without firmware libraries
+        run: ./build-native.sh
+      - name: Build media integration and collect notices
+        run: |
+          ./media/upstream/build.sh
+          python3 scripts/rust-notices.py
+      - name: Build official YAM v2 packer
+        run: |
+          git clone https://github.com/nyakokitsu/yam.git ../.build/yam
+          git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
+          cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
+      - name: Pack and verify installation lifecycle
+        run: |
+          version=$(python3 scripts/check-version.py)
+          for platform in $(python3 -c "from platforms import PLATFORMS; print(' '.join(PLATFORMS))"); do
+            python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
+            python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-$version-$platform.yampkg"
+          done
+          python3 scripts/release-assets.py ../release/*.yampkg
+      - name: Verify checksums and publish
+        run: |
+          cd ../release
+          sha256sum -c SHA256SUMS
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; leaving its assets intact.'
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" ./* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "ytm-alice ${RELEASE_TAG#v}" --notes-file ../docs/RELEASE.md
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
