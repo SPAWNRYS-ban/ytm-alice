@@ -133,6 +133,59 @@ func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error)
 	return nil, errNoTracks
 }
 
+// titleLookup finds a catalog song by its exact title when "artist title"
+// matched nothing: catalogs disagree on artists (Yandex lists «Bochka, Bass,
+// Kolbaser» under Паша Техник, YouTube Music under XS Project). The same
+// artist wins; another artist is accepted only for a title of two or more
+// words, so a short common title never plays someone else's song.
+func (c *Catalog) titleLookup(ctx context.Context, artist, title string) ([]Track, error) {
+	words := searchWords(title)
+	if len(words) == 0 {
+		return nil, errNoTracks
+	}
+	tracks, err := c.lookup(ctx, title)
+	if err != nil && !errors.Is(err, errNoTracks) {
+		return nil, err
+	}
+	if found := sameTitle(artist, title, tracks); len(found) > 0 {
+		return found, nil
+	}
+	return nil, errNoTracks
+}
+
+func sameTitle(artist, title string, tracks []Track) []Track {
+	want := strings.Join(searchWords(title), " ")
+	artistWords := map[string]bool{}
+	for _, w := range searchWords(artist) {
+		artistWords[w] = true
+	}
+	same, other := []Track{}, []Track{}
+	for _, t := range tracks {
+		if strings.Join(searchWords(t.Title), " ") != want {
+			continue
+		}
+		shared := false
+		for _, w := range searchWords(t.Artists) {
+			if artistWords[w] {
+				shared = true
+				break
+			}
+		}
+		if shared {
+			same = append(same, t)
+		} else {
+			other = append(other, t)
+		}
+	}
+	if len(same) > 0 {
+		return same
+	}
+	if len(strings.Fields(want)) >= 2 {
+		return other
+	}
+	return nil
+}
+
 func (c *Catalog) searchVideos(ctx context.Context, query string) ([]Track, error) {
 	payload := map[string]any{"query": query, "params": "EgIQAQ%3D%3D", "context": map[string]any{"client": map[string]any{"clientName": "WEB", "clientVersion": "2." + time.Now().UTC().Format("20060102") + ".01.00", "hl": "ru", "gl": "US"}}}
 	raw, _ := json.Marshal(payload)

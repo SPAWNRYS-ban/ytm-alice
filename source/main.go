@@ -63,12 +63,20 @@ type State struct {
 	Auth        *AuthStatus `json:"auth,omitempty"`
 }
 type request struct {
-	Action     string         `json:"action"`
-	Query      string         `json:"query,omitempty"`
-	Index      int            `json:"index,omitempty"`
-	PositionMS int64          `json:"position_ms,omitempty"`
-	Auth       *Credentials   `json:"auth,omitempty"`
-	Settings   *SettingsPatch `json:"settings,omitempty"`
+	Action string `json:"action"`
+	Query  string `json:"query,omitempty"`
+	Single bool   `json:"single,omitempty"` // play: queue only the best match
+	// play fallbacks when Query finds nothing: the catalog song by its title,
+	// then the spoken request.
+	Title  string `json:"title,omitempty"`
+	Artist string `json:"artist,omitempty"`
+	Spoken string `json:"spoken,omitempty"`
+	// SpokenFirst: the catalog song does not match the spoken words.
+	SpokenFirst bool           `json:"spoken_first,omitempty"`
+	Index       int            `json:"index,omitempty"`
+	PositionMS  int64          `json:"position_ms,omitempty"`
+	Auth        *Credentials   `json:"auth,omitempty"`
+	Settings    *SettingsPatch `json:"settings,omitempty"`
 }
 type response struct {
 	State      *State           `json:"state,omitempty"`
@@ -227,8 +235,32 @@ func (s *Server) command(ctx context.Context, r request) response {
 		var e error
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
+			// A personal mix lists songs twice like radio does (audio and
+			// clip under different IDs).
+			tracks = newRadioTracks(nil, tracks)
 		} else {
-			tracks, e = s.catalog.playLookup(ctx, r.Query)
+			step := "spoken first"
+			e = errNoTracks
+			if r.SpokenFirst {
+				tracks, e = s.catalog.playLookup(ctx, r.Spoken)
+			}
+			if errors.Is(e, errNoTracks) {
+				step = "query"
+				tracks, e = s.catalog.playLookup(ctx, r.Query)
+			}
+			if errors.Is(e, errNoTracks) && r.Title != "" {
+				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title); err == nil {
+					step, tracks, e = "title", found, nil
+				}
+			}
+			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query && !r.SpokenFirst {
+				if found, err := s.catalog.playLookup(ctx, r.Spoken); err == nil {
+					step, tracks, e = "spoken", found, nil
+				}
+			}
+			if r.Title != "" || r.Spoken != "" {
+				log.Print(takeoverLookupLog(r, step, tracks, e))
+			}
 		}
 		s.mu.Lock()
 		if s.generation != g || s.lookupGeneration != lookup {
@@ -244,7 +276,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "play" && !isLikedQuery(r.Query) && !strings.HasPrefix(lower, "альбом ") && !strings.HasPrefix(lower, "плейлист ") && !strings.Contains(r.Query, "list=") {
 			index = 0
 		}
-		s.installQueueLocked(tracks, index)
+		s.installQueueLocked(singleTrack(tracks, r.Single), index)
 		s.state.PositionMS = 0
 		s.saveLocked()
 		s.mu.Unlock()
@@ -678,6 +710,24 @@ func voiceAction(text string) (string, string, bool) {
 			}
 		}
 	}
+	// «Ютуб» anywhere in a music request: «включи трек numb с ютуба». Alice
+	// itself treats these as a video request and refuses on a speaker.
+	if mentionsYouTube(q) {
+		for _, verb := range []string{"включи ", "поставь ", "запусти ", "найди ", "сыграй "} {
+			if !strings.HasPrefix(q, verb) {
+				continue
+			}
+			query := withoutYouTube(strings.TrimSpace(q[len(verb):]))
+			for _, noun := range []string{"песню ", "трек ", "композицию ", "музыку "} {
+				query = strings.TrimSpace(strings.TrimPrefix(query, noun))
+			}
+			switch query {
+			case "", "музыку", "песню", "трек", "что-нибудь":
+				return "recommendations", "", true
+			}
+			return "play", query, true
+		}
+	}
 	for _, verb := range []string{"поставь ", "включи "} {
 		if !strings.HasPrefix(q, verb) {
 			continue
@@ -731,7 +781,25 @@ func nativeVoiceTarget(query string) bool {
 func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
-	var trackRequests []string
+	var trackRequests, takenOver []string
+	take := func(c net.Conn, id string, req request, reason string) {
+		takenOver = append(takenOver, id)
+		if len(takenOver) > 64 {
+			takenOver = takenOver[1:]
+		}
+		c.SetWriteDeadline(time.Now().Add(time.Second))
+		if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
+			log.Print("native dialog cancellation not confirmed")
+		}
+		log.Printf("voice takeover: %s %s", req.Action, reason)
+		go func() {
+			c, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+			if res := s.command(c, req); res.Error != "" {
+				log.Print("voice takeover failed: " + logSafe(res.Error))
+			}
+		}()
+	}
 	for ctx.Err() == nil {
 		c, e := net.DialTimeout("tcp", voiceIPCAddress(), time.Second)
 		if e != nil {
@@ -767,7 +835,25 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
 				continue
 			}
+			fresh := ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID)
+			if !ok && fresh && len(ev.Response) > 0 && s.getSettings().YouTubeOnly {
+				// Alice found nothing for a music request and asks to clarify.
+				if query, isMusic := musicRequest(ev.Text); isMusic {
+					if music, listen := cloudAnswer(ev.Response); !music && listen {
+						take(c, ev.RequestID, request{Action: "play", Query: query, Spoken: query}, "after Alice found nothing")
+						continue
+					}
+				}
+			}
 			if !ok {
+				if s.getSettings().YouTubeOnly {
+					// The cloud chose its own music player: cancel it and play
+					// the same request on YouTube Music instead.
+					if m, found := parseNativeMusic(ev.Response); found && fresh {
+						take(c, ev.RequestID, takeoverRequest(m, ev.Text), "from native "+m.Kind)
+					}
+					continue
+				}
 				// Let a native music request take over without mixing two players.
 				if strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
 					s.mu.Lock()
@@ -816,7 +902,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				defer cancel()
 				res := s.command(c, request{Action: "voice", Query: text})
 				if res.Error != "" {
-					log.Print("voice music request failed")
+					log.Print("voice music request failed: " + logSafe(res.Error))
 				}
 			}(ev.Text)
 		}

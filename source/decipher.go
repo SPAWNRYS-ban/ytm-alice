@@ -166,6 +166,7 @@ func (c *Catalog) decipherURL(ctx context.Context, id string, format yt.Format) 
 			return "", err
 		}
 		c.playerSource = program
+		c.setSignatureTimestamp(playerTimestamp(player))
 	}
 	input := map[string]any{"type": "preprocessed", "preprocessed_player": c.playerSource, "requests": requests}
 	result, err := runDecipher(ctx, input)
