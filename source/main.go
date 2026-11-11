@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-const version = "0.7.5"
+const version = "0.7.6"
 const relayAddr = "127.0.0.1:18883"
 
 func dataDir() string {
@@ -429,7 +429,7 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 	s.prepCancel = cancel
 	options := s.settingsLocked()
 	say := announce && s.state.Announce && options.AnnounceText != ""
-	announcement := options.AnnounceText
+	announcement := trackAnnouncement(options.AnnounceText, t)
 	s.saveLocked()
 	s.mu.Unlock()
 	go func() {
@@ -465,6 +465,17 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			return
 		}
 		if err != nil {
+			var unavailable unavailableTrack
+			if offset == 0 && errors.As(err, &unavailable) && s.state.Index+1 < len(s.state.Queue) {
+				log.Printf("skipping unavailable track=%s reason=%s", t.ID, logSafe(err.Error()))
+				s.state.Index++
+				s.state.PositionMS = 0
+				s.saveLocked()
+				// Never extend radio or wrap here: an inaccessible queue must
+				// terminate, with a single error announcement at its end.
+				go s.startGuarded(0, false, 0, &g)
+				return
+			}
 			s.state.Status = "error"
 			s.state.Error = err.Error()
 			s.notifyFailure(g)
@@ -551,7 +562,9 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser) {
 		case "eos":
 			natural = true
 		case "error":
-			s.failLocked("ошибка воспроизведения YouTube")
+			// The helper may still be retried below. Announce only the
+			// terminal failure, not both this event and process termination.
+			s.state.Error = "ошибка воспроизведения YouTube"
 		}
 		s.mu.Unlock()
 	}
@@ -781,7 +794,7 @@ func nativeVoiceTarget(query string) bool {
 func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
-	var trackRequests, takenOver []string
+	var routedRequests, takenOver []string
 	take := func(c net.Conn, id string, req request, reason string) {
 		takenOver = append(takenOver, id)
 		if len(takenOver) > 64 {
@@ -832,7 +845,7 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			}
 			q := normalize(ev.Text)
 			a, _, ok := s.voiceAction(q)
-			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
+			if ev.HasState && ev.State != 3 && !(ok && ev.State == 1 && ev.Final) {
 				continue
 			}
 			fresh := ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID)
@@ -855,7 +868,8 @@ func (s *Server) voiceLoop(ctx context.Context) {
 					continue
 				}
 				// Let a native music request take over without mixing two players.
-				if strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
+				_, nativeMusic := parseNativeMusic(ev.Response)
+				if nativeMusic || strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
 					s.mu.Lock()
 					s.stopLocked()
 					s.state.Status = "stopped"
@@ -877,19 +891,19 @@ func (s *Server) voiceLoop(ctx context.Context) {
 					continue
 				}
 			}
-			if a == "what" && ev.RequestID != "" {
-				if slices.Contains(trackRequests, ev.RequestID) {
+			if ev.RequestID != "" {
+				if slices.Contains(routedRequests, ev.RequestID) {
 					continue
 				}
-				trackRequests = append(trackRequests, ev.RequestID)
-				if len(trackRequests) > 64 {
-					trackRequests = trackRequests[1:]
+				routedRequests = append(routedRequests, ev.RequestID)
+				if len(routedRequests) > 64 {
+					routedRequests = routedRequests[1:]
 				}
 				// A final ASR result can precede BUSY. Cancel on the existing
-				// event connection before the cloud starts music recognition.
+				// event connection before the cloud starts its player or subscription speech.
 				c.SetWriteDeadline(time.Now().Add(time.Second))
 				if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
-					log.Print("early track-query cancellation not confirmed")
+					log.Print("early voice cancellation not confirmed")
 				}
 			} else if q == last && time.Since(lastTime) < 10*time.Second {
 				continue

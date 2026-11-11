@@ -12,6 +12,12 @@ import (
 	yt "github.com/kkdai/youtube/v2"
 )
 
+// unavailableTrack marks a permanent restriction on one track, rather than a
+// network failure or rate limit. Only this kind can advance the queue.
+type unavailableTrack struct{ message string }
+
+func (e unavailableTrack) Error() string { return e.message }
+
 // Some Music tracks require the explicit-content acknowledgement and a browser
 // session. Keep that session on the existing, exact music.youtube.com endpoint;
 // the public resolver, JS downloads and signed CDN URLs remain credential-free.
@@ -31,11 +37,11 @@ func (c *Catalog) musicVideo(ctx context.Context, id string) (*yt.Video, error) 
 	switch status {
 	case "OK":
 	case "LOGIN_REQUIRED":
-		return nil, errors.New("YouTube: для этого трека нужен вход и подтверждённый возраст аккаунта; подключите или обновите cookies в настройках")
+		return nil, unavailableTrack{"YouTube: для этого трека нужен вход и подтверждённый возраст аккаунта; подключите или обновите cookies в настройках"}
 	case "CONTENT_CHECK_REQUIRED", "AGE_CHECK_REQUIRED":
-		return nil, errors.New("YouTube: подтвердите доступ к этому треку в YouTube Music и обновите cookies")
+		return nil, unavailableTrack{"YouTube: подтвердите доступ к этому треку в YouTube Music и обновите cookies"}
 	case "UNPLAYABLE", "ERROR":
-		return nil, errors.New("YouTube: трек недоступен для этого аккаунта или региона")
+		return nil, unavailableTrack{"YouTube: трек недоступен для этого аккаунта или региона"}
 	default:
 		return nil, errors.New("YouTube: не удалось получить аудиопоток")
 	}

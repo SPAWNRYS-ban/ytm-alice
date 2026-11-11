@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	yt "github.com/kkdai/youtube/v2"
 	"io"
 	"log"
 	"net/http"
@@ -181,6 +182,7 @@ func TestStreamForbiddenDropsCachedPlayerProgram(t *testing.T) {
 		s, _ := streamFixture([]byte("audio"))
 		s.catalog.playerSource = "player program"
 		s.catalog.playerSTS = 20761
+		s.catalog.ytClient = &yt.Client{}
 		s.catalog.http = &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) { return tc.reply() })}
 		previous := log.Writer()
 		log.SetOutput(io.Discard)
@@ -188,6 +190,9 @@ func TestStreamForbiddenDropsCachedPlayerProgram(t *testing.T) {
 		log.SetOutput(previous)
 		if forgot := s.catalog.playerSource == ""; forgot != tc.forget {
 			t.Fatalf("%s: player program dropped=%v, want %v", tc.name, forgot, tc.forget)
+		}
+		if forgot := s.catalog.ytClient == nil; forgot != tc.forget {
+			t.Fatalf("%s: cached embed client dropped=%v, want %v", tc.name, forgot, tc.forget)
 		}
 		if forgot := s.catalog.playerSTS == 0; forgot != tc.forget {
 			t.Fatalf("%s: signature timestamp dropped=%v, want %v", tc.name, forgot, tc.forget)

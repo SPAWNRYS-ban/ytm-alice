@@ -248,9 +248,11 @@ func musicRequest(text string) (string, bool) {
 	if !verb || query == "" {
 		return "", false
 	}
-	for _, word := range notMusic {
-		if strings.HasPrefix(query+" ", word) {
-			return "", false
+	for _, token := range strings.Fields(query) {
+		for _, word := range notMusic {
+			if strings.HasPrefix(token+" ", word) {
+				return "", false
+			}
 		}
 	}
 	return query, true

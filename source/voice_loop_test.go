@@ -33,6 +33,7 @@ func TestVoiceLoopKeepsIdleConnection(t *testing.T) {
 	defer func() { voiceIPCAddress = old }()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	go func() {
 		(&Server{}).voiceLoop(ctx)

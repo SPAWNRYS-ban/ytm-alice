@@ -331,3 +331,8 @@ func songKey(track Track) string {
 	}
 	return strings.Join(searchWords(artist), " ") + "|" + title
 }
+
+// Templates are opt-in; existing plain announcements keep their wording.
+func trackAnnouncement(template string, track Track) string {
+	return strings.NewReplacer("{artist}", track.Artists, "{title}", track.Title).Replace(template)
+}

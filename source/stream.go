@@ -34,6 +34,11 @@ func (c *Catalog) forgetPlayer() {
 	c.playerSource = ""
 	// The next program may be another version; its timestamp is read anew.
 	c.setSignatureTimestamp(0)
+	// withYT also caches the embed page that selects base.js. Drop that
+	// client as well, otherwise a 403 refresh downloads the old program again.
+	c.ytMu.Lock()
+	c.ytClient = nil
+	c.ytMu.Unlock()
 }
 
 // Signed URLs and underlying error strings must never reach the log.
