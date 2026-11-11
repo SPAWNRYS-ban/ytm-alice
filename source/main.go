@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-const version = "0.7.5"
+const version = "0.7.6"
 const relayAddr = "127.0.0.1:18883"
 
 func dataDir() string {
@@ -63,12 +63,20 @@ type State struct {
 	Auth        *AuthStatus `json:"auth,omitempty"`
 }
 type request struct {
-	Action     string         `json:"action"`
-	Query      string         `json:"query,omitempty"`
-	Index      int            `json:"index,omitempty"`
-	PositionMS int64          `json:"position_ms,omitempty"`
-	Auth       *Credentials   `json:"auth,omitempty"`
-	Settings   *SettingsPatch `json:"settings,omitempty"`
+	Action string `json:"action"`
+	Query  string `json:"query,omitempty"`
+	Single bool   `json:"single,omitempty"` // play: queue only the best match
+	// play fallbacks when Query finds nothing: the catalog song by its title,
+	// then the spoken request.
+	Title  string `json:"title,omitempty"`
+	Artist string `json:"artist,omitempty"`
+	Spoken string `json:"spoken,omitempty"`
+	// SpokenFirst: the catalog song does not match the spoken words.
+	SpokenFirst bool           `json:"spoken_first,omitempty"`
+	Index       int            `json:"index,omitempty"`
+	PositionMS  int64          `json:"position_ms,omitempty"`
+	Auth        *Credentials   `json:"auth,omitempty"`
+	Settings    *SettingsPatch `json:"settings,omitempty"`
 }
 type response struct {
 	State      *State           `json:"state,omitempty"`
@@ -227,8 +235,32 @@ func (s *Server) command(ctx context.Context, r request) response {
 		var e error
 		if r.Action == "recommendations" {
 			tracks, e = s.catalog.recommendations(ctx)
+			// A personal mix lists songs twice like radio does (audio and
+			// clip under different IDs).
+			tracks = newRadioTracks(nil, tracks)
 		} else {
-			tracks, e = s.catalog.playLookup(ctx, r.Query)
+			step := "spoken first"
+			e = errNoTracks
+			if r.SpokenFirst {
+				tracks, e = s.catalog.playLookup(ctx, r.Spoken)
+			}
+			if errors.Is(e, errNoTracks) {
+				step = "query"
+				tracks, e = s.catalog.playLookup(ctx, r.Query)
+			}
+			if errors.Is(e, errNoTracks) && r.Title != "" {
+				if found, err := s.catalog.titleLookup(ctx, r.Artist, r.Title); err == nil {
+					step, tracks, e = "title", found, nil
+				}
+			}
+			if errors.Is(e, errNoTracks) && r.Spoken != "" && r.Spoken != r.Query && !r.SpokenFirst {
+				if found, err := s.catalog.playLookup(ctx, r.Spoken); err == nil {
+					step, tracks, e = "spoken", found, nil
+				}
+			}
+			if r.Title != "" || r.Spoken != "" {
+				log.Print(takeoverLookupLog(r, step, tracks, e))
+			}
 		}
 		s.mu.Lock()
 		if s.generation != g || s.lookupGeneration != lookup {
@@ -244,7 +276,7 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if r.Action == "play" && !isLikedQuery(r.Query) && !strings.HasPrefix(lower, "альбом ") && !strings.HasPrefix(lower, "плейлист ") && !strings.Contains(r.Query, "list=") {
 			index = 0
 		}
-		s.installQueueLocked(tracks, index)
+		s.installQueueLocked(singleTrack(tracks, r.Single), index)
 		s.state.PositionMS = 0
 		s.saveLocked()
 		s.mu.Unlock()
@@ -397,7 +429,7 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 	s.prepCancel = cancel
 	options := s.settingsLocked()
 	say := announce && s.state.Announce && options.AnnounceText != ""
-	announcement := options.AnnounceText
+	announcement := trackAnnouncement(options.AnnounceText, t)
 	s.saveLocked()
 	s.mu.Unlock()
 	go func() {
@@ -433,6 +465,17 @@ func (s *Server) startGuarded(offset int64, announce bool, attempt int, expected
 			return
 		}
 		if err != nil {
+			var unavailable unavailableTrack
+			if offset == 0 && errors.As(err, &unavailable) && s.state.Index+1 < len(s.state.Queue) {
+				log.Printf("skipping unavailable track=%s reason=%s", t.ID, logSafe(err.Error()))
+				s.state.Index++
+				s.state.PositionMS = 0
+				s.saveLocked()
+				// Never extend radio or wrap here: an inaccessible queue must
+				// terminate, with a single error announcement at its end.
+				go s.startGuarded(0, false, 0, &g)
+				return
+			}
 			s.state.Status = "error"
 			s.state.Error = err.Error()
 			s.notifyFailure(g)
@@ -519,7 +562,9 @@ func (s *Server) monitor(p *nativePlayer, g uint64, out io.ReadCloser) {
 		case "eos":
 			natural = true
 		case "error":
-			s.failLocked("ошибка воспроизведения YouTube")
+			// The helper may still be retried below. Announce only the
+			// terminal failure, not both this event and process termination.
+			s.state.Error = "ошибка воспроизведения YouTube"
 		}
 		s.mu.Unlock()
 	}
@@ -678,6 +723,24 @@ func voiceAction(text string) (string, string, bool) {
 			}
 		}
 	}
+	// «Ютуб» anywhere in a music request: «включи трек numb с ютуба». Alice
+	// itself treats these as a video request and refuses on a speaker.
+	if mentionsYouTube(q) {
+		for _, verb := range []string{"включи ", "поставь ", "запусти ", "найди ", "сыграй "} {
+			if !strings.HasPrefix(q, verb) {
+				continue
+			}
+			query := withoutYouTube(strings.TrimSpace(q[len(verb):]))
+			for _, noun := range []string{"песню ", "трек ", "композицию ", "музыку "} {
+				query = strings.TrimSpace(strings.TrimPrefix(query, noun))
+			}
+			switch query {
+			case "", "музыку", "песню", "трек", "что-нибудь":
+				return "recommendations", "", true
+			}
+			return "play", query, true
+		}
+	}
 	for _, verb := range []string{"поставь ", "включи "} {
 		if !strings.HasPrefix(q, verb) {
 			continue
@@ -731,15 +794,37 @@ func nativeVoiceTarget(query string) bool {
 func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
-	var trackRequests []string
+	var routedRequests, takenOver []string
+	take := func(c net.Conn, id string, req request, reason string) {
+		takenOver = append(takenOver, id)
+		if len(takenOver) > 64 {
+			takenOver = takenOver[1:]
+		}
+		c.SetWriteDeadline(time.Now().Add(time.Second))
+		if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
+			log.Print("native dialog cancellation not confirmed")
+		}
+		log.Printf("voice takeover: %s %s", req.Action, reason)
+		go func() {
+			c, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+			if res := s.command(c, req); res.Error != "" {
+				log.Print("voice takeover failed: " + logSafe(res.Error))
+			}
+		}()
+	}
 	for ctx.Err() == nil {
-		c, e := net.DialTimeout("tcp", ipcAddress(), time.Second)
+		c, e := net.DialTimeout("tcp", voiceIPCAddress(), time.Second)
 		if e != nil {
 			time.Sleep(time.Second)
 			continue
 		}
+		// One long-lived subscription: an idle gap is not a disconnect.
+		// Reconnecting after every quiet 2 s (~1800 times an hour) made Alice
+		// replies slower the longer platformd ran. Shutdown closes the socket
+		// to unblock the read.
+		stop := context.AfterFunc(ctx, func() { c.Close() })
 		for ctx.Err() == nil {
-			c.SetReadDeadline(time.Now().Add(2 * time.Second))
 			raw, e := frameRead(c)
 			if e != nil {
 				break
@@ -760,12 +845,31 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			}
 			q := normalize(ev.Text)
 			a, _, ok := s.voiceAction(q)
-			if ev.HasState && ev.State != 3 && !(a == "what" && ev.State == 1 && ev.Final) {
+			if ev.HasState && ev.State != 3 && !(ok && ev.State == 1 && ev.Final) {
 				continue
 			}
+			fresh := ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID)
+			if !ok && fresh && len(ev.Response) > 0 && s.getSettings().YouTubeOnly {
+				// Alice found nothing for a music request and asks to clarify.
+				if query, isMusic := musicRequest(ev.Text); isMusic {
+					if music, listen := cloudAnswer(ev.Response); !music && listen {
+						take(c, ev.RequestID, request{Action: "play", Query: query, Spoken: query}, "after Alice found nothing")
+						continue
+					}
+				}
+			}
 			if !ok {
+				if s.getSettings().YouTubeOnly {
+					// The cloud chose its own music player: cancel it and play
+					// the same request on YouTube Music instead.
+					if m, found := parseNativeMusic(ev.Response); found && fresh {
+						take(c, ev.RequestID, takeoverRequest(m, ev.Text), "from native "+m.Kind)
+					}
+					continue
+				}
 				// Let a native music request take over without mixing two players.
-				if strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
+				_, nativeMusic := parseNativeMusic(ev.Response)
+				if nativeMusic || strings.HasPrefix(strings.TrimPrefix(q, "алиса "), "включи музыку") || strings.Contains(q, "включи мою волну") {
 					s.mu.Lock()
 					s.stopLocked()
 					s.state.Status = "stopped"
@@ -787,19 +891,19 @@ func (s *Server) voiceLoop(ctx context.Context) {
 					continue
 				}
 			}
-			if a == "what" && ev.RequestID != "" {
-				if slices.Contains(trackRequests, ev.RequestID) {
+			if ev.RequestID != "" {
+				if slices.Contains(routedRequests, ev.RequestID) {
 					continue
 				}
-				trackRequests = append(trackRequests, ev.RequestID)
-				if len(trackRequests) > 64 {
-					trackRequests = trackRequests[1:]
+				routedRequests = append(routedRequests, ev.RequestID)
+				if len(routedRequests) > 64 {
+					routedRequests = routedRequests[1:]
 				}
 				// A final ASR result can precede BUSY. Cancel on the existing
-				// event connection before the cloud starts music recognition.
+				// event connection before the cloud starts its player or subscription speech.
 				c.SetWriteDeadline(time.Now().Add(time.Second))
 				if err := frameWrite(c, rpc(8, pi(1, 3))); err != nil {
-					log.Print("early track-query cancellation not confirmed")
+					log.Print("early voice cancellation not confirmed")
 				}
 			} else if q == last && time.Since(lastTime) < 10*time.Second {
 				continue
@@ -812,12 +916,16 @@ func (s *Server) voiceLoop(ctx context.Context) {
 				defer cancel()
 				res := s.command(c, request{Action: "voice", Query: text})
 				if res.Error != "" {
-					log.Print("voice music request failed")
+					log.Print("voice music request failed: " + logSafe(res.Error))
 				}
 			}(ev.Text)
 		}
+		stop()
 		c.Close()
 		s.aliceIdle.Store(false)
+		if ctx.Err() == nil {
+			time.Sleep(time.Second)
+		}
 	}
 }
 func stationCertPool(paths ...string) *x509.CertPool {

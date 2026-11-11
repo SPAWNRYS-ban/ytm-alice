@@ -73,7 +73,7 @@ git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
 cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
 for platform in $(python3 -c "from platforms import PLATFORMS; print(' '.join(PLATFORMS))"); do
   python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
-  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.5-$platform.yampkg"
+  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.6-$platform.yampkg"
 done
 python3 scripts/release-assets.py ../release/*.yampkg
 ```

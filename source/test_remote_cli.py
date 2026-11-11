@@ -59,6 +59,15 @@ for number,line in enumerate(sys.stdin):
         self.assertEqual(cli.panel_state({'state': {'queue': None}})['queue'], [])
 
 
+class ConfigTests(unittest.TestCase):
+    def test_youtube_only_is_a_boolean_setting(self):
+        action, value = cli.config_request(['set', 'youtube_only', 'True'])
+        self.assertEqual(action, 'config-set')
+        self.assertEqual(value, {'youtube_only': True})
+        with self.assertRaises(cli.ClientError):
+            cli.config_request(['set', 'youtube_only', 'yes'])
+
+
 class LoginTests(unittest.TestCase):
     def test_firefox_filters_domains_containers_and_expired_cookies_even_when_locked(self):
         with tempfile.TemporaryDirectory() as folder:

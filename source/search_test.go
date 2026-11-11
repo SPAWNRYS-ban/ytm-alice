@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 )
@@ -86,5 +87,26 @@ func TestCyrillicArtistSearchUsesLatinVideoQueryAndPrefersArtistPrefix(t *testin
 	tracks, err := c.playLookup(context.Background(), "йовай зе мейд")
 	if err != nil || len(tracks) != 1 || tracks[0].ID != "bcdefghijkl" || calls != 3 {
 		t.Fatalf("%+v %v calls=%d", tracks, err, calls)
+	}
+}
+
+func TestTitleLookupFindsSongCreditedToAnotherArtist(t *testing.T) {
+	c := newCatalog()
+	queries := []string{}
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		queries = append(queries, str(body["query"]))
+		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Alpha, Beta, Gamma"}}}}}, map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Group B", "navigationEndpoint": map[string]any{"browseEndpoint": map[string]any{"browseId": "UCgroupb"}}}}}}}}}}), nil
+	})}
+	if _, err := c.playLookup(context.Background(), "Исполнитель Alpha, Beta, Gamma"); !errors.Is(err, errNoTracks) {
+		t.Fatalf("artist mismatch should not match by artist and title: %v", err)
+	}
+	got, err := c.titleLookup(context.Background(), "Исполнитель", "Alpha, Beta, Gamma")
+	if err != nil || len(got) != 1 || got[0].ID != "abcdefghijk" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if queries[len(queries)-1] != "Alpha, Beta, Gamma" {
+		t.Fatalf("title lookup searched %q", queries[len(queries)-1])
 	}
 }

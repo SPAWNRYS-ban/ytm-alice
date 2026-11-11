@@ -24,7 +24,9 @@ func TestPublicReleaseSmoke(t *testing.T) {
 		if err != nil || len(tracks) == 0 {
 			t.Fatalf("public video fallback %q: %v", query, err)
 		}
-		if !strings.Contains(strings.ToLower(tracks[0].Title), "chasm") {
+		// The query names an artist, not a song. Provider ranking changes;
+		// another song by that artist (e.g. Shiro-Kuro) is a valid result.
+		if !strings.HasPrefix(strings.ToLower(tracks[0].Title), "yowai the maid") && !strings.EqualFold(tracks[0].Artists, "Yowai The Maid") {
 			t.Fatalf("%q: unrelated first result: %s", query, tracks[0].Title)
 		}
 		t.Logf("%q: %d relevant tracks; first: %s — %s", query, len(tracks), tracks[0].Artists, tracks[0].Title)

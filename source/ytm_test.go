@@ -21,7 +21,7 @@ func TestVoiceRouting(t *testing.T) {
 			t.Fatalf("not routed: %q", q)
 		}
 	}
-	for _, q := range []string{"Алиса, какая погода?", "включи музыку", "включи мою волну", "включи на ютубе"} {
+	for _, q := range []string{"Алиса, какая погода?", "включи музыку", "включи мою волну"} {
 		if _, _, ok := voiceAction(q); ok {
 			t.Fatalf("native request intercepted: %q", q)
 		}

@@ -126,6 +126,11 @@ func ipcAddress() string {
 	}
 	return "127.0.0.1:9875"
 }
+
+// voiceIPCAddress is where voiceLoop subscribes to Alice events; tests point
+// it at a fake aliced.
+var voiceIPCAddress = ipcAddress
+
 func cancelDialog() error {
 	c, err := net.DialTimeout("tcp", ipcAddress(), 2*time.Second)
 	if err != nil {
@@ -213,6 +218,7 @@ type aliceEvent struct {
 	HasState  bool
 	Final     bool
 	RequestID string
+	Response  []byte // AliceResponse JSON of a BUSY event, if the cloud answered
 }
 
 func decodeAlice(b []byte) aliceEvent {
@@ -222,7 +228,7 @@ func decodeAlice(b []byte) aliceEvent {
 	}
 	state := proto(d[3].b)
 	_, hasState := d[3]
-	e := aliceEvent{Text: string(state[2].b), State: state[1].n, HasState: hasState, RequestID: string(state[7].b)}
+	e := aliceEvent{Text: string(state[2].b), State: state[1].n, HasState: hasState, RequestID: string(state[7].b), Response: proto(state[3].b)[5].b}
 	recognition := proto(state[15].b)
 	e.Final = recognition[2].n == 1 && recognition[4].n == 1 && string(recognition[1].b) == e.Text
 	source := proto(state[10].b)

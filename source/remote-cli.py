@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 
-VERSION = '0.7.5'
+VERSION = '0.7.6'
 REMOTE = '/data/yam/bin/ytm-alice'
 STATES = {'playing': 'Играет', 'paused': 'Пауза', 'stopped': 'Остановлено',
           'searching': 'Поиск', 'buffering': 'Подготовка', 'error': 'Ошибка'}
@@ -577,7 +577,7 @@ def config_request(arguments):
     if len(arguments) < 3 or arguments[0] != 'set':
         raise ClientError('config get | config set КЛЮЧ ЗНАЧЕНИЕ')
     key, value = arguments[1], ' '.join(arguments[2:])
-    if key in ('radio', 'shuffle', 'playback_led', 'announce_errors'):
+    if key in ('radio', 'shuffle', 'playback_led', 'announce_errors', 'youtube_only'):
         if value.lower() not in ('true', 'false'):
             raise ClientError('нужно true или false')
         value = value.lower() == 'true'

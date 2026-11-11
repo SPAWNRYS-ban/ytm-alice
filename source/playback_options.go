@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -90,17 +91,7 @@ func (s *Server) fillRadio(g uint64, id string) {
 	if s.generation != g || s.closing || s.queueCast || !s.settingsLocked().Radio {
 		return
 	}
-	seen := map[string]bool{}
-	for _, track := range s.state.Queue {
-		seen[track.ID] = true
-	}
-	added := []Track{}
-	for _, track := range task.tracks {
-		if !seen[track.ID] {
-			seen[track.ID] = true
-			added = append(added, track)
-		}
-	}
+	added := newRadioTracks(s.state.Queue, task.tracks)
 	s.queueOrder = append(s.queueOrder, added...)
 	if s.settingsLocked().Shuffle {
 		rand.Shuffle(len(added), func(i, j int) { added[i], added[j] = added[j], added[i] })
@@ -169,7 +160,15 @@ func (s *Server) voiceAction(text string) (string, string, bool) {
 			return "play", strings.TrimSpace(q[len(prefix):]), true
 		}
 	}
-	return voiceAction(text)
+	a, query, ok := voiceAction(text)
+	// With youtube_only all music goes through Alice's answer, which also
+	// fixes misheard names («поставь mister brightside» found nothing by text,
+	// «включи» found «The Killers — Mr. Brightside» via the catalog). The text
+	// route keeps «ютуб» phrases, likes and player controls.
+	if ok && a == "play" && settings.YouTubeOnly && !mentionsYouTube(q) && query != "мои лайки" {
+		return "", "", false
+	}
+	return a, query, ok
 }
 
 // Only complete, known RGB rings are addressed; never clocks, microphone
@@ -280,4 +279,60 @@ func (s *Server) indicatorLoop(ctx context.Context) {
 			led.update(dark)
 		}
 	}
+}
+
+// newRadioTracks returns radio tracks not already queued. YouTube radio often
+// lists a song twice, as the audio track and as its music video under another
+// ID; a song is the same when its main artist and its title without a
+// "(Official Video)"-style suffix match. Of two versions the non-video wins.
+func newRadioTracks(queue, radio []Track) []Track {
+	seenID := map[string]bool{}
+	seenSong := map[string]bool{}
+	for _, track := range queue {
+		seenID[track.ID] = true
+		seenSong[songKey(track)] = true
+	}
+	added := []Track{}
+	at := map[string]int{}
+	for _, track := range radio {
+		key := songKey(track)
+		if seenID[track.ID] || seenSong[key] {
+			continue
+		}
+		seenID[track.ID] = true
+		if i, ok := at[key]; ok {
+			if musicVideo(added[i].Title) && !musicVideo(track.Title) {
+				added[i] = track
+			}
+			continue
+		}
+		at[key] = len(added)
+		added = append(added, track)
+	}
+	return added
+}
+
+var videoSuffix = regexp.MustCompile(`(?i)\s*[\(\[][^\)\]]*\b(official|video|clip|lyrics?|audio|visuali[sz]er|hd|4k|remaster(ed)?)\b[^\)\]]*[\)\]]`)
+
+var videoMarker = regexp.MustCompile(`(?i)[\(\[][^\)\]]*\b(video|clip|lyrics?|visuali[sz]er|live)\b`)
+
+// musicVideo reports a clip/lyric/live upload rather than the audio track.
+func musicVideo(title string) bool {
+	return videoMarker.MatchString(title)
+}
+
+func songKey(track Track) string {
+	title := strings.Join(searchWords(videoSuffix.ReplaceAllString(track.Title, "")), " ")
+	artist := strings.ToLower(track.Artists)
+	for _, sep := range []string{",", "&", " и ", " feat", " ft.", " x "} {
+		if i := strings.Index(artist, sep); i > 0 {
+			artist = artist[:i]
+		}
+	}
+	return strings.Join(searchWords(artist), " ") + "|" + title
+}
+
+// Templates are opt-in; existing plain announcements keep their wording.
+func trackAnnouncement(template string, track Track) string {
+	return strings.NewReplacer("{artist}", track.Artists, "{title}", track.Title).Replace(template)
 }
