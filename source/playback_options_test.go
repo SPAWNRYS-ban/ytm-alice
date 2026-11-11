@@ -87,3 +87,16 @@ func TestRecommendationsSkipVideoVersionsOfTheSameSong(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestRadioPreservesOfficialRemixesAndLivePerformances(t *testing.T) {
+	queue := []Track{{ID: "original", Artists: "Artist", Title: "Song"}}
+	candidates := []Track{
+		{ID: "remix", Artists: "Artist", Title: "Song (Official Remix)"},
+		{ID: "live", Artists: "Artist", Title: "Song (Official Live Video)"},
+		{ID: "clip", Artists: "Artist", Title: "Song (Official Video)"},
+	}
+	tracks := newRadioTracks(queue, candidates)
+	if len(tracks) != 2 || tracks[0].ID != "remix" || tracks[1].ID != "live" {
+		t.Fatalf("distinct performances lost: %+v", tracks)
+	}
+}
