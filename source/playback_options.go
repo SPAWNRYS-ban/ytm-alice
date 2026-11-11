@@ -314,6 +314,10 @@ func newRadioTracks(queue, radio []Track) []Track {
 
 var videoSuffix = regexp.MustCompile(`(?i)\s*[\(\[][^\)\]]*\b(official|video|clip|lyrics?|audio|visuali[sz]er|hd|4k|remaster(ed)?)\b[^\)\]]*[\)\]]`)
 
+// Marketing suffixes may also name a distinct performance. Removing an
+// entire "(Official Remix)" or "(Live Video)" would discard that version.
+var performanceMarker = regexp.MustCompile(`(?i)\b(remix|mix|live|acoustic|instrumental|edit|sped|slowed|karaoke)\b`)
+
 var videoMarker = regexp.MustCompile(`(?i)[\(\[][^\)\]]*\b(video|clip|lyrics?|visuali[sz]er|live)\b`)
 
 // musicVideo reports a clip/lyric/live upload rather than the audio track.
@@ -322,7 +326,13 @@ func musicVideo(title string) bool {
 }
 
 func songKey(track Track) string {
-	title := strings.Join(searchWords(videoSuffix.ReplaceAllString(track.Title, "")), " ")
+	cleanTitle := videoSuffix.ReplaceAllStringFunc(track.Title, func(suffix string) string {
+		if performanceMarker.MatchString(suffix) {
+			return suffix
+		}
+		return ""
+	})
+	title := strings.Join(searchWords(cleanTitle), " ")
 	artist := strings.ToLower(track.Artists)
 	for _, sep := range []string{",", "&", " и ", " feat", " ft.", " x "} {
 		if i := strings.Index(artist, sep); i > 0 {
