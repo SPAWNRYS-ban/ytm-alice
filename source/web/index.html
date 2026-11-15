@@ -25,8 +25,14 @@
  <section class="now-playing" aria-label="Сейчас играет">
   <div class="cover-wrap"><img id="current-cover" src="/placeholder.svg" alt="Обложка текущего трека" width="280" height="280" referrerpolicy="no-referrer"></div>
   <div class="now-info"><div class="playing-caption"><span class="mini-wave"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#wave"></use></svg></span><span id="player-status">Готова слушать</span></div><h2 id="current-title">Что включим?</h2><p id="current-artist">Найди трек или попроси Алису</p>
-   <div class="transport"><button id="previous" class="icon-button" aria-label="Предыдущий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#previous"></use></svg></button><button id="toggle" class="play-button" aria-label="Продолжить" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg></button><button id="next" class="icon-button" aria-label="Следующий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#next"></use></svg></button><button id="stop" class="text-button" disabled>Стоп</button></div>
-   <div class="timeline"><progress id="progress" max="1" value="0" aria-label="Позиция воспроизведения"></progress><div class="time-labels"><span id="elapsed">0:00</span><span id="duration">0:00</span></div></div>
+   <div class="transport"><button id="previous" class="icon-button" aria-label="Предыдущий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#previous"></use></svg></button><button id="toggle" class="play-button" aria-label="Продолжить" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#play"></use></svg></button><button id="next" class="icon-button" aria-label="Следующий трек" disabled><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#next"></use></svg></button><button id="stop" class="text-button" disabled>Стоп</button><button id="seek-back" class="text-button" aria-label="Назад на 30 секунд" disabled>−30</button><button id="seek-forward" class="text-button" aria-label="Вперёд на 30 секунд" disabled>+30</button></div>
+   <div class="timeline">
+     <div class="seek-wrap">
+       <progress id="progress" max="1" value="0" aria-hidden="true"></progress>
+       <input id="seek" type="range" min="0" max="1" step="1000" value="0" aria-label="Позиция воспроизведения" disabled>
+     </div>
+     <div class="time-labels"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+   </div>
    <p class="quiet-note">Играет на колонке · страницу можно закрыть</p>
   </div>
  </section>
