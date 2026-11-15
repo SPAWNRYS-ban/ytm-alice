@@ -33,7 +33,7 @@ func panelRequest(panel *webPanel, method, path, body, origin string, secure boo
 func TestWebLocalAccessNeedsNoCodeAndAssetsStayBounded(t *testing.T) {
 	t.Setenv("YTM_ALICE_DATA", t.TempDir())
 	p := panelFixture()
-	for _, path := range []string{"/", "/app.js", "/cookies.mjs", "/icons.mjs", "/icons.svg", "/logo.svg", "/style.css", "/placeholder.svg", "/api/info", "/api/state"} {
+	for _, path := range []string{"/", "/app.js", "/cookies.mjs", "/icons.mjs", "/seek.mjs", "/icons.svg", "/logo.svg", "/style.css", "/placeholder.svg", "/api/info", "/api/state"} {
 		out := panelRequest(p, "GET", path, "", "", false)
 		if out.Code != 200 {
 			t.Fatalf("%s: %d %s", path, out.Code, out.Body.String())
