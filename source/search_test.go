@@ -110,3 +110,21 @@ func TestTitleLookupFindsSongCreditedToAnotherArtist(t *testing.T) {
 		t.Fatalf("title lookup searched %q", queries[len(queries)-1])
 	}
 }
+
+// A catalog name with a bare percent sign is not a valid URL; searching it
+// crashed the daemon on a nil URL.
+func TestPlayLookupSearchesQueryThatIsNotAValidURL(t *testing.T) {
+	c := newCatalog()
+	c.http = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		return jsonReply(map[string]any{"musicResponsiveListItemRenderer": map[string]any{"playlistItemData": map[string]any{"videoId": "abcdefghijk"}, "flexColumns": []any{map[string]any{"musicResponsiveListItemFlexColumnRenderer": map[string]any{"text": map[string]any{"runs": []any{map[string]any{"text": "Artist A - 100% Song One"}}}}}}}}), nil
+	})}
+	for _, query := range []string{"Artist A 100% Song One", "Artist A %2"} {
+		if _, err := c.lookup(context.Background(), query); err != nil && !errors.Is(err, errNoTracks) {
+			t.Fatalf("%s: %v", query, err)
+		}
+	}
+	got, err := c.playLookup(context.Background(), "Artist A 100% Song One")
+	if err != nil || len(got) != 1 || got[0].ID != "abcdefghijk" {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
