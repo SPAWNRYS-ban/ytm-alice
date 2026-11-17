@@ -115,11 +115,12 @@ func daemon(action string) error {
 				return err
 			}
 		} else {
+			// The Bluetooth media layer is optional: a firmware it does not
+			// fit must still get ytm-alice's own autostart below.
 			if err := bundledMedia("install"); err != nil {
-				return err
-			}
-			if err := bundledMedia("start"); err != nil {
-				return err
+				fmt.Fprintln(os.Stderr, "Предупреждение:", err)
+			} else if err := bundledMedia("start"); err != nil {
+				fmt.Fprintln(os.Stderr, "Предупреждение:", err)
 			}
 		}
 		root := packageRoot()
