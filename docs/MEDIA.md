@@ -30,6 +30,10 @@ yam install --yes /tmp/ytm-alice-0.7.6-yandexmicro.yampkg
 ФС возвращается в read-only. Параметры исходных Bluetooth init-скриптов,
 сопряжения, Wi-Fi, SSH и защита от OTA не изменяются.
 
+Медиаслою нужны BlueZ-службы `S51bluetoothd`…`S54default-bluez-agent`. На прошивке
+без них (Мини 1) `install` и `start` сообщают, что медиаслой не поддерживается,
+и ничего не меняют; ytm-alice и его автозапуск работают без медиаслоя.
+
 Приватная root-only шина: `unix:path=/tmp/btbus/socket`, конфигурация поставляется
 пакетом. `bluetoothd`, `bluealsa`, `bluealsa-aplay` и агент сопряжения работают
 на ней. `bt-proxy` пересылает настоящие устройства на системную D-Bus,

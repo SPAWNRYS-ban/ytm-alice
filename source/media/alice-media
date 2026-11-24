@@ -9,6 +9,11 @@ RUN=/tmp/btbus
 HOOK=/etc/init.d/S55zbtproxy
 ACTIVATION=/usr/share/dbus-1/system-services/org.bluez.service
 BT="S51bluetoothd S52bluealsa S53bluealsa-aplay S54default-bluez-agent"
+# The layer restarts these BlueZ services on its private bus. Some firmware
+# (Mini 1) runs Bluetooth without BlueZ and has none of them.
+supported() {
+    for service in $BT; do [ -x "/etc/init.d/$service" ] || return 1; done
+}
 stop_bt() {
     for service in S54default-bluez-agent S53bluealsa-aplay S52bluealsa S51bluetoothd; do
         /etc/init.d/$service stop
@@ -94,7 +99,7 @@ EOF
 uninstall_hook() {
     [ "$(id -u)" = 0 ] || { echo 'Нужен root' >&2; exit 1; }
     stop
-    stop_bt
+    if supported; then stop_bt; fi
     if alive "$RUN/dbus.pid"; then kill "$(cat "$RUN/dbus.pid")" 2>/dev/null || true; fi
     mount -o remount,rw /
     trap 'mount -o remount,ro /' EXIT
@@ -106,9 +111,15 @@ uninstall_hook() {
     sync
     mount -o remount,ro /
     trap - EXIT
-    for service in $BT; do /etc/init.d/$service start; done
+    if supported; then for service in $BT; do /etc/init.d/$service start; done; fi
     echo 'Штатный Bluetooth возвращён. Перезагрузка очистит оставшиеся медиасессии.'
 }
+case "${1:-status}" in
+    install|start|restart)
+        # Not an error: ytm-alice plays without the media layer.
+        supported || { echo 'Медиаслой не поддерживается этой прошивкой: нет служб BlueZ.'; exit 0; }
+        ;;
+esac
 case "${1:-status}" in
     install) install_hook ;;
     uninstall) uninstall_hook ;;
