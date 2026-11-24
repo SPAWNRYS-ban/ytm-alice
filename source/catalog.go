@@ -357,10 +357,12 @@ func (c *Catalog) lookup(ctx context.Context, q string) ([]Track, error) {
 	}
 	var tracks []Track
 	var err error
-	u, _ := url.Parse(q)
+	// A song name is not always a valid URL («100% …»): Parse then returns
+	// nil, so only a parsed query can be a link.
+	u, parseErr := url.Parse(q)
 	if isLikedQuery(q) {
 		tracks, err = c.browse(ctx, "VLLM")
-	} else if u.Scheme != "" {
+	} else if parseErr == nil && u.Scheme != "" {
 		host := strings.ToLower(u.Hostname())
 		if (u.Scheme != "http" && u.Scheme != "https") || !(host == "youtu.be" || host == "youtube.com" || host == "www.youtube.com" || host == "music.youtube.com") {
 			return nil, errors.New("поддерживаются только ссылки YouTube")

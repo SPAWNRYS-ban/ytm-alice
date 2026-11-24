@@ -100,9 +100,9 @@ func relevantSongs(query string, tracks []Track) []Track {
 func (c *Catalog) playLookup(ctx context.Context, query string) ([]Track, error) {
 	tracks, err := c.lookup(ctx, query)
 	q := strings.TrimSpace(query)
-	parsed, _ := url.Parse(q)
+	parsed, parseErr := url.Parse(q)
 	lower := strings.ToLower(q)
-	if parsed.Scheme != "" || isLikedQuery(q) || strings.HasPrefix(lower, "альбом ") || strings.HasPrefix(lower, "плейлист ") {
+	if (parseErr == nil && parsed.Scheme != "") || isLikedQuery(q) || strings.HasPrefix(lower, "альбом ") || strings.HasPrefix(lower, "плейлист ") {
 		return tracks, err
 	}
 	if err != nil && !errors.Is(err, errNoTracks) {
