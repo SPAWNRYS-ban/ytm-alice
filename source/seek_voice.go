@@ -44,6 +44,9 @@ func parseSeekVoice(text string) (seekSpec, bool) {
 	if m := seekClockRe.FindStringSubmatch(rest); m != nil {
 		min, _ := strconv.Atoi(m[1])
 		sec, _ := strconv.Atoi(m[2])
+		if sec >= 60 {
+			return seekSpec{}, false
+		}
 		return seekSpec{PositionMS: int64(min*60+sec) * 1000}, true
 	}
 	// Порядковая позиция: «30-ю секунду», «вторую минуту».
@@ -118,7 +121,12 @@ func stripDirection(rest string) string {
 }
 
 var durationNumbers = map[string]int64{
-	"ноль": 0, "десять": 10, "двадцать": 20, "тридцать": 30,
+	"ноль": 0, "один": 1, "одна": 1, "одну": 1, "два": 2, "две": 2,
+	"три": 3, "четыре": 4, "пять": 5, "шесть": 6, "семь": 7,
+	"восемь": 8, "девять": 9, "десять": 10, "одиннадцать": 11,
+	"двенадцать": 12, "тринадцать": 13, "четырнадцать": 14, "пятнадцать": 15,
+	"шестнадцать": 16, "семнадцать": 17, "восемнадцать": 18, "девятнадцать": 19,
+	"двадцать": 20, "тридцать": 30,
 	"сорок": 40, "пятьдесят": 50, "шестьдесят": 60, "семьдесят": 70,
 	"восемьдесят": 80, "девяносто": 90, "сто": 100,
 }
@@ -146,15 +154,25 @@ func parseSeekDuration(body string) (int64, bool) {
 			continue
 		}
 		n, ok := durationNumber(words[i])
-		if !ok || i+1 >= len(words) {
+		if !ok {
 			return 0, false
 		}
-		unit, ok := durationUnit(words[i+1])
+		i++
+		if tens, isWord := durationNumbers[words[i-1]]; isWord && tens >= 20 && tens < 100 && i < len(words) {
+			if ones := durationNumbers[words[i]]; ones >= 1 && ones <= 9 {
+				n += ones
+				i++
+			}
+		}
+		if i >= len(words) {
+			return 0, false
+		}
+		unit, ok := durationUnit(words[i])
 		if !ok {
 			return 0, false
 		}
 		total += n * unit
-		i += 2
+		i++
 	}
 	return total, true
 }
@@ -172,7 +190,7 @@ func durationUnit(word string) (int64, bool) {
 
 // durationNumber разбирает число словами или цифрами.
 func durationNumber(word string) (int64, bool) {
-	if n, err := strconv.Atoi(word); err == nil {
+	if n, err := strconv.ParseUint(word, 10, 16); err == nil {
 		return int64(n), true
 	}
 	n, ok := durationNumbers[word]
