@@ -812,6 +812,7 @@ func nativeVoiceTarget(query string) bool {
 func (s *Server) voiceLoop(ctx context.Context) {
 	last := ""
 	lastTime := time.Time{}
+	splitASR := os.Getenv("YTM_ALICE_LEGACY_ASR") == "1"
 	var routedRequests, takenOver []string
 	take := func(c net.Conn, id string, req request, reason string) {
 		takenOver = append(takenOver, id)
@@ -842,12 +843,16 @@ func (s *Server) voiceLoop(ctx context.Context) {
 		// replies slower the longer platformd ran. Shutdown closes the socket
 		// to unblock the read.
 		stop := context.AfterFunc(ctx, func() { c.Close() })
+		var recognition splitRecognition
 		for ctx.Err() == nil {
 			raw, e := frameRead(c)
 			if e != nil {
 				break
 			}
 			ev := decodeAlice(raw)
+			if splitASR {
+				ev = recognition.complete(ev, time.Now())
+			}
 			if ev.HasState {
 				s.aliceIdle.Store(ev.State == 0)
 				s.mu.Lock()

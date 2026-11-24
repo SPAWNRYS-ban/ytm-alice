@@ -60,6 +60,19 @@ func TestUnavailableClassificationAndAnnouncement(t *testing.T) {
 }
 
 func TestFinalVoiceCommandCancelsBeforeBusy(t *testing.T) {
+	t.Setenv("YTM_ALICE_LEGACY_ASR", "")
+	checkVoiceStop(t, aliceStateFrame(1, "Алиса стоп", "stop-one", true))
+}
+
+func TestLegacyVoiceCommandRoutesAfterTextlessBusy(t *testing.T) {
+	t.Setenv("YTM_ALICE_LEGACY_ASR", "1")
+	listening := pb(3, cat(pi(1, 1), pb(2, []byte("Алиса стоп")), pb(7, []byte("stop-one"))))
+	busy := pb(3, cat(pi(1, 3), pb(7, []byte("stop-one"))))
+	checkVoiceStop(t, listening, busy)
+}
+
+func checkVoiceStop(t *testing.T, frames ...[]byte) {
+	t.Helper()
 	t.Setenv("YTM_ALICE_DATA", t.TempDir())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -80,11 +93,13 @@ func TestFinalVoiceCommandCancelsBeforeBusy(t *testing.T) {
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(3 * time.Second))
-	if err := frameWrite(conn, aliceStateFrame(1, "Алиса стоп", "stop-one", true)); err != nil {
-		t.Fatal(err)
+	for _, frame := range frames {
+		if err := frameWrite(conn, frame); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := frameRead(conn); err != nil {
-		t.Fatalf("no early cancellation: %v", err)
+		t.Fatalf("no cancellation for routed voice command: %v", err)
 	}
 	deadline := time.After(3 * time.Second)
 	for s.snapshot().Status != "stopped" {

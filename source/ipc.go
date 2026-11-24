@@ -221,6 +221,35 @@ type aliceEvent struct {
 	Response  []byte // AliceResponse JSON of a BUSY event, if the cloud answered
 }
 
+// Some older quasar versions send the recognized text in LISTENING and the
+// end of recognition in a separate BUSY event. Keep at most one phrase per
+// connection and consume it at the next state transition out of LISTENING.
+type splitRecognition struct {
+	text      string
+	requestID string
+	at        time.Time
+}
+
+func (pending *splitRecognition) complete(event aliceEvent, now time.Time) aliceEvent {
+	if !event.HasState {
+		return event
+	}
+	if event.State == 1 {
+		if event.Text != "" && !event.Final {
+			*pending = splitRecognition{text: event.Text, requestID: event.RequestID, at: now}
+		} else if event.Final || pending.requestID != event.RequestID {
+			*pending = splitRecognition{}
+		}
+		return event
+	}
+	if event.State == 3 && event.Text == "" && pending.text != "" &&
+		event.RequestID == pending.requestID && now.Sub(pending.at) <= 10*time.Second {
+		event.Text = pending.text
+	}
+	*pending = splitRecognition{}
+	return event
+}
+
 func decodeAlice(b []byte) aliceEvent {
 	d := proto(b)
 	if d[253].wire == 0 && d[253].n == 3 {
