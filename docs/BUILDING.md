@@ -15,7 +15,7 @@ cd source
 go test -race ./...
 go vet ./...
 python3 -m unittest discover -v
-node --test test_web_cookies.mjs
+node --test test_web_cookies.mjs test_seek.mjs
 cargo test --locked --manifest-path media/upstream/Cargo.toml
 ```
 
@@ -71,9 +71,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dis
 git clone https://github.com/nyakokitsu/yam.git ../.build/yam
 git -C ../.build/yam checkout 887c9d17f370a89b2d938f5a3369076ff851dfae
 cargo build --locked --release --manifest-path ../.build/yam/Cargo.toml --bin yam
+version=$(python3 scripts/check-version.py)
 for platform in $(python3 -c "from platforms import PLATFORMS; print(' '.join(PLATFORMS))"); do
   python3 package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms
-  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-0.7.6-$platform.yampkg"
+  python3 scripts/check-package.py --platform "$platform" --yam ../.build/yam/target/release/yam --profiles ../.build/yam/platforms "../release/ytm-alice-$version-$platform.yampkg"
 done
 python3 scripts/release-assets.py ../release/*.yampkg
 ```
