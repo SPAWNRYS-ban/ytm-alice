@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func aliceStateFrame(state uint64, text, requestID string, final bool) []byte {
@@ -27,6 +28,39 @@ func TestFinalRecognitionIsAvailableBeforeBusy(t *testing.T) {
 	}
 	if decodeAlice(aliceStateFrame(1, "Что сейчас", requestID, false)).Final {
 		t.Fatal("partial recognition treated as final")
+	}
+}
+
+func TestSplitRecognitionUsesOnlyCurrentPhrase(t *testing.T) {
+	const text = "Алиса стоп"
+	for _, tc := range []struct {
+		name   string
+		frames []aliceEvent
+		delay  time.Duration
+		want   string
+	}{
+		{"same request", []aliceEvent{{State: 1, Text: text, RequestID: "a"}, {State: 3, RequestID: "a"}}, 0, text},
+		{"without IDs", []aliceEvent{{State: 1, Text: text}, {State: 3}}, 0, text},
+		{"unrelated request", []aliceEvent{{State: 1, Text: text, RequestID: "a"}, {State: 3, RequestID: "b"}}, 0, ""},
+		{"expired", []aliceEvent{{State: 1, Text: text}, {State: 3}}, 11 * time.Second, ""},
+		{"idle resets", []aliceEvent{{State: 1, Text: text}, {State: 0}, {State: 3}}, 0, ""},
+		{"only once", []aliceEvent{{State: 1, Text: text}, {State: 3}, {State: 3}}, 0, ""},
+		{"final ASR already routed", []aliceEvent{{State: 1, Text: text, Final: true}, {State: 3}}, 0, ""},
+		{"busy includes own text", []aliceEvent{{State: 1, Text: text}, {State: 3, Text: "Алиса пауза"}}, 0, "Алиса пауза"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pending splitRecognition
+			now := time.Now()
+			var got aliceEvent
+			for _, frame := range tc.frames {
+				frame.HasState = true
+				got = pending.complete(frame, now)
+				now = now.Add(tc.delay)
+			}
+			if got.Text != tc.want {
+				t.Fatalf("text = %q, want %q", got.Text, tc.want)
+			}
+		})
 	}
 }
 
