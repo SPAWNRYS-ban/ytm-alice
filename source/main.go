@@ -383,6 +383,21 @@ func (s *Server) command(ctx context.Context, r request) response {
 		if !ok {
 			return response{Error: "нет команды YouTube Music"}
 		}
+		if a == "seek" {
+			spec, ok := parseSeekVoice(r.Query)
+			if !ok {
+				return response{Error: "не понял, куда перемотать"}
+			}
+			v := s.snapshot()
+			if len(v.Queue) == 0 || v.Index < 0 || v.Index >= len(v.Queue) {
+				return response{Error: "плеер не запущен"}
+			}
+			pos := spec.target(v.PositionMS, v.Queue[v.Index].DurationMS)
+			log.Printf("voice seek: text=%q spec=%+v current=%d dur=%d target=%d", r.Query, spec, v.PositionMS, v.Queue[v.Index].DurationMS, pos)
+			cancelDialog()
+			time.Sleep(120 * time.Millisecond)
+			return s.command(ctx, request{Action: "seek", PositionMS: pos})
+		}
 		if a == "what" {
 			v := s.snapshot()
 			if len(v.Queue) > 0 {
@@ -697,6 +712,9 @@ func voiceAction(text string) (string, string, bool) {
 	q := normalize(text)
 	q = strings.TrimSpace(strings.TrimPrefix(q, "алиса "))
 	q = strings.TrimSpace(strings.TrimSuffix(q, " пожалуйста"))
+	if _, ok := parseSeekVoice(q); ok {
+		return "seek", "", true
+	}
 	for _, phrase := range []string{"включи музыку на ютубе", "поставь музыку на ютубе", "включи музыку в youtube music", "включи рекомендации", "включи рекомендации на ютубе", "включи youtube music", "включи ютуб музыку"} {
 		if q == phrase {
 			return "recommendations", "", true

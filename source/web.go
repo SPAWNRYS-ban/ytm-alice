@@ -191,7 +191,7 @@ func (p *webPanel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			name = "index.html"
 		}
 		// A small explicit asset set; never exposes package data or credentials.
-		allowed := map[string]string{"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "cookies.mjs": "text/javascript; charset=utf-8", "icons.mjs": "text/javascript; charset=utf-8", "icons.svg": "image/svg+xml", "style.css": "text/css; charset=utf-8", "placeholder.svg": "image/svg+xml", "logo.svg": "image/svg+xml"}
+		allowed := map[string]string{"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "cookies.mjs": "text/javascript; charset=utf-8", "icons.mjs": "text/javascript; charset=utf-8", "seek.mjs": "text/javascript; charset=utf-8", "icons.svg": "image/svg+xml", "style.css": "text/css; charset=utf-8", "placeholder.svg": "image/svg+xml", "logo.svg": "image/svg+xml"}
 		mime, ok := allowed[name]
 		if !ok {
 			http.NotFound(w, r)

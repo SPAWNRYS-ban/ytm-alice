@@ -56,7 +56,9 @@ jobs:
           python3 scripts/check-resolver.py /tmp/ytm-alice-resolver
           YTM_ALICE_RESOLVER=/tmp/ytm-alice-resolver go test -run 'TestNative(Preprocessed|Public)' ./...
       - name: Browser cookie parser
-        run: node --test test_web_cookies.mjs
+        run: |
+          node --test test_web_cookies.mjs
+          node --test test_seek.mjs
 
   media:
     defaults:

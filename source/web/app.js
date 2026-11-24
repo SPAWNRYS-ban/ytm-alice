@@ -1,8 +1,11 @@
 import {parseCookieFile} from '/cookies.mjs';
 import {icon} from '/icons.mjs';
+import {clampPosition} from '/seek.mjs';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
+let trackDuration = 0;
+let scrubbing = false;
 let activeView = 'queue';
 let pending = 0;
 let queueSignature = '';
@@ -119,10 +122,19 @@ function renderState(next) {
   $('player-status').textContent=statusText[state.status]||state.status;
   setArtwork($('current-cover'),track?.thumbnail_url);
   const playing=['playing','buffering','searching'].includes(state.status);
-  $('toggle').replaceChildren(icon(playing?'pause':'play'));$('toggle').setAttribute('aria-label',playing?'Пауза':'Продолжить');
+  const toggleIcon=playing?'pause':'play';
+  if($('toggle').dataset.icon!==toggleIcon){$('toggle').replaceChildren(icon(toggleIcon));$('toggle').dataset.icon=toggleIcon;$('toggle').setAttribute('aria-label',playing?'Пауза':'Продолжить');}
   $('toggle').disabled=!track;$('stop').disabled=!track;$('previous').disabled=!track||state.index===0;$('next').disabled=!track||state.index>=state.queue.length-1;
-  $('progress').max=Math.max(1,track?.duration_ms||1);$('progress').value=state.position_ms||0;
-  $('elapsed').textContent=formatTime(state.position_ms);$('duration').textContent=formatTime(track?.duration_ms);
+  const duration=track?.duration_ms||0;
+  trackDuration=duration;
+  if(!scrubbing){
+    $('progress').max=Math.max(1,duration);$('progress').value=state.position_ms||0;
+    $('seek').max=Math.max(1,duration);$('seek').value=state.position_ms||0;
+    $('elapsed').textContent=formatTime(state.position_ms);
+  }
+  $('duration').textContent=formatTime(duration);
+  $('seek').disabled=!track||!duration;
+  $('seek-back').disabled=!track;$('seek-forward').disabled=!track;
   $('queue-caption').textContent=track?`${state.queue.length} треков · выбран ${state.index+1}`:'Выбери музыку для начала';
   $('announce').checked=state.announce;
   $('shuffle-queue').setAttribute('aria-pressed',String(!!state.shuffle));
@@ -192,13 +204,32 @@ async function poll() {
   catch {connected(false);}
   schedulePoll();
 }
-function schedulePoll(){clearTimeout(refreshTimer);refreshTimer=setTimeout(poll,document.hidden?15000:3000);}
+function schedulePoll(){clearTimeout(refreshTimer);refreshTimer=setTimeout(poll,document.hidden?15000:1000);}
 
 $('search-form').addEventListener('submit',event=>{
   event.preventDefault();const query=$('search-input').value.trim();if(!query)return;
   perform($('search-submit'),async()=>{empty($('search-results'),'Ищем в YouTube Music…');try{const data=await command('search',{query});renderTracks($('search-results'),data.tracks||[],'search');}catch(error){empty($('search-results'),error.message);throw error;}});
 });
 for(const action of ['previous','next','stop','toggle']) $(action).onclick=()=>perform($(action),()=>command(action));
+const seek=$('seek');
+seek.addEventListener('input',()=>{
+  scrubbing=true;
+  $('progress').value=seek.value;
+  $('elapsed').textContent=formatTime(Number(seek.value));
+});
+seek.addEventListener('change',()=>{
+  const pos=clampPosition(Number(seek.value),trackDuration);
+  perform(null,async()=>{
+    try{await command('seek',{position_ms:pos});}
+    finally{scrubbing=false;}
+  });
+});
+for(const [id,delta] of [['seek-back',-30000],['seek-forward',30000]]){
+  $(id).onclick=()=>perform($(id),()=>{
+    const duration=state?.queue?.[state.index]?.duration_ms||0;
+    return command('seek',{position_ms:clampPosition((state?.position_ms||0)+delta,duration)});
+  });
+}
 $('account-shortcut').onclick=()=>showView('settings');
 document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>showView(button.dataset.view));
 $('refresh-liked').onclick=()=>perform($('refresh-liked'),loadLiked);
