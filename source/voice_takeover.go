@@ -225,6 +225,15 @@ func cloudAnswer(raw []byte) (music, listen bool) {
 	return music, reply.VoiceResponse.ShouldListen
 }
 
+// aliceGaveUp tells whether the cloud answered without starting its own
+// music. Earlier replies asked to clarify (should_listen); streaming replies
+// carry only a placeholder in the JSON, do not listen, and say the refusal
+// in the dialog state instead.
+func aliceGaveUp(ev aliceEvent) bool {
+	music, listen := cloudAnswer(ev.Response)
+	return !music && (listen || ev.Spoken != "")
+}
+
 // Requests that start with a play verb but are not about music.
 var notMusic = []string{
 	"свет", "ламп", "люстр", "подсвет", "телевизор", "тв ", "таймер", "будильник",

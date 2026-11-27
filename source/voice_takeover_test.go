@@ -139,6 +139,37 @@ func TestCloudAnswerSeesNotFoundAndMusic(t *testing.T) {
 	}
 }
 
+// streamingBusyFrame mirrors a BUSY frame recorded on a Mini 2 with streaming
+// responses: the JSON is a placeholder, the spoken reply sits in state[13].
+func streamingBusyFrame(text, requestID, response, spoken string) []byte {
+	asr := cat(pb(1, []byte(text)), pi(2, 1), pi(4, 1))
+	body := cat(pi(1, 3), pb(2, []byte(text)), pb(3, pb(5, []byte(response))), pb(7, []byte(requestID)), pb(15, asr))
+	if spoken != "" {
+		body = cat(body, pb(13, cat(pb(1, []byte(spoken)), pb(2, []byte(requestID)))))
+	}
+	return cat(pb(252, body), pi(253, 3))
+}
+
+func TestStreamingRefusalIsSeenAsGivingUp(t *testing.T) {
+	const id = "12345678-1234-1234-1234-123456789012"
+	placeholder := `{"response":{"directives":[{"name":"tts_play_placeholder","payload":{"channel":"Dialog"},"type":"client_action"}],"is_streaming":true},"voice_response":{"has_voice_response":true,"should_listen":false}}`
+	refusal := decodeAlice(streamingBusyFrame("Включи Artist A", id, placeholder, "Не нашла ничего с таким названием."))
+	if refusal.Spoken != "Не нашла ничего с таким названием." || !refusal.Final || refusal.RequestID != id {
+		t.Fatalf("spoken reply lost: %+v", refusal)
+	}
+	if !aliceGaveUp(refusal) {
+		t.Fatal("streaming refusal not seen")
+	}
+	// The first BUSY frame of the same request has the placeholder but no words yet.
+	if aliceGaveUp(decodeAlice(streamingBusyFrame("Включи Artist A", id, placeholder, ""))) {
+		t.Fatal("placeholder alone treated as a refusal")
+	}
+	music := `{"response":{"directives":[{"name":"audio_play","sub_name":"music"}]},"voice_response":{"should_listen":false}}`
+	if aliceGaveUp(decodeAlice(streamingBusyFrame("Включи Artist A", id, music, "Включаю."))) {
+		t.Fatal("native music treated as a refusal")
+	}
+}
+
 func TestMusicRequestSkipsHomeAndBareCommands(t *testing.T) {
 	for text, want := range map[string]string{
 		"Алиса, включи artist a song one": "artist a song one",
