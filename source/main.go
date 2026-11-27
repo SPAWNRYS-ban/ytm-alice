@@ -1207,6 +1207,13 @@ func main() {
 			args = []string{"status"}
 		}
 	}
+	if args[0] == "supervise" {
+		if e := supervise(); e != nil {
+			fmt.Fprintln(os.Stderr, e)
+			os.Exit(1)
+		}
+		return
+	}
 	if args[0] == "serve" {
 		if e := serve(); e != nil {
 			fmt.Fprintln(os.Stderr, e)
