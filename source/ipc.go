@@ -219,6 +219,9 @@ type aliceEvent struct {
 	Final     bool
 	RequestID string
 	Response  []byte // AliceResponse JSON of a BUSY event, if the cloud answered
+	// Spoken is the reply Alice says. With streaming responses the JSON holds
+	// only a tts_play_placeholder and the words arrive here.
+	Spoken string
 }
 
 func decodeAlice(b []byte) aliceEvent {
@@ -228,7 +231,7 @@ func decodeAlice(b []byte) aliceEvent {
 	}
 	state := proto(d[3].b)
 	_, hasState := d[3]
-	e := aliceEvent{Text: string(state[2].b), State: state[1].n, HasState: hasState, RequestID: string(state[7].b), Response: proto(state[3].b)[5].b}
+	e := aliceEvent{Text: string(state[2].b), State: state[1].n, HasState: hasState, RequestID: string(state[7].b), Response: proto(state[3].b)[5].b, Spoken: string(proto(state[13].b)[1].b)}
 	recognition := proto(state[15].b)
 	e.Final = recognition[2].n == 1 && recognition[4].n == 1 && string(recognition[1].b) == e.Text
 	source := proto(state[10].b)

@@ -868,9 +868,9 @@ func (s *Server) voiceLoop(ctx context.Context) {
 			}
 			fresh := ev.RequestID != "" && !slices.Contains(takenOver, ev.RequestID)
 			if !ok && fresh && len(ev.Response) > 0 && s.getSettings().YouTubeOnly {
-				// Alice found nothing for a music request and asks to clarify.
+				// Alice found nothing for a music request.
 				if query, isMusic := musicRequest(ev.Text); isMusic {
-					if music, listen := cloudAnswer(ev.Response); !music && listen {
+					if aliceGaveUp(ev) {
 						take(c, ev.RequestID, request{Action: "play", Query: query, Spoken: query}, "after Alice found nothing")
 						continue
 					}
